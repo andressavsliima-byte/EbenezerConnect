@@ -1,0 +1,5 @@
+# Configuração do Frontend para .gitignore
+node_modules/
+dist/
+.DS_Store
+*.log

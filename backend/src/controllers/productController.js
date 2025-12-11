@@ -1,0 +1,372 @@
+import Product from '../models/Product.js';
+import Settings from '../models/Settings.js';
+import {
+  buildMetalTechnicalSheet,
+  computeProductPricing,
+  hasAnyMetalQuantity,
+  normalizeMetalValue,
+  normalizeSettings,
+  parseNumber
+} from '../utils/metalPricing.js';
+
+const sanitizeText = (value) => {
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+};
+
+const roundCurrency = (value) => {
+  const numeric = Number.isFinite(value) ? value : 0;
+  return Math.round((numeric + Number.EPSILON) * 100) / 100;
+};
+
+const normalizeStockValue = (value) => {
+  if (value === null || value === undefined || value === '') return 0;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) ? 0 : parsed;
+};
+
+const normalizeImagesInput = (input, fallbackImage) => {
+  const images = [];
+  if (Array.isArray(input)) {
+    input.forEach((item) => {
+      const sanitized = sanitizeText(item);
+      if (sanitized) images.push(sanitized);
+    });
+  } else {
+    const sanitized = sanitizeText(input);
+    if (sanitized) images.push(sanitized);
+  }
+
+  if (images.length === 0 && fallbackImage) {
+    const sanitizedFallback = sanitizeText(fallbackImage);
+    if (sanitizedFallback) images.push(sanitizedFallback);
+  }
+
+  return images;
+};
+
+const normalizeSpecificationsInput = (specifications, fallback = {}) => {
+  // Normalize fallback first to avoid spreading a Map (which introduces mongoose internals)
+  let fallbackObj = {};
+  if (fallback instanceof Map) {
+    fallbackObj = Object.fromEntries(fallback.entries());
+  } else if (Array.isArray(fallback)) {
+    // allow array of [key, value]
+    fallbackObj = Object.fromEntries(
+      fallback.filter((item) => Array.isArray(item) && item.length >= 2)
+    );
+  } else if (fallback && typeof fallback === 'object') {
+    fallbackObj = { ...fallback };
+  }
+
+  if (!specifications) {
+    return { ...fallbackObj };
+  }
+
+  let entries = [];
+  if (specifications instanceof Map) {
+    entries = Array.from(specifications.entries());
+  } else if (Array.isArray(specifications)) {
+    entries = specifications.filter((item) => Array.isArray(item) && item.length >= 2);
+  } else if (typeof specifications === 'object') {
+    entries = Object.entries(specifications);
+  }
+
+  if (!entries.length) {
+    return { ...fallbackObj };
+  }
+
+  const normalized = { ...fallbackObj };
+  entries.forEach(([rawKey, rawValue]) => {
+    const key = sanitizeText(rawKey);
+    if (!key || key === '__proto__' || key === 'constructor' || key === 'prototype') return;
+    const value = rawValue === null || rawValue === undefined ? '' : sanitizeText(rawValue);
+    normalized[key] = value;
+  });
+
+  return normalized;
+};
+
+const extractMetalCompositionInput = (body) => {
+  if (!body) return [];
+  if (Array.isArray(body.metalComposition)) return body.metalComposition;
+  if (Array.isArray(body.metals)) return body.metals;
+  if (Array.isArray(body.metalSheet)) return body.metalSheet;
+  if (Array.isArray(body.metalTechnicalSheet)) return body.metalTechnicalSheet;
+  return [];
+};
+
+const fetchNormalizedMetalPricingSettings = async () => {
+  const settingsDoc = await Settings.findOne({ key: 'global' }).lean();
+  return normalizeSettings(settingsDoc || {});
+};
+
+const buildPricingSnapshot = ({
+  compositionInput,
+  fallbackPrice,
+  legacyMetalContent,
+  settings
+}) => {
+  const pricing = computeProductPricing({
+    composition: compositionInput,
+    settings,
+    legacyMetalContent
+  });
+
+  const hasMetals = hasAnyMetalQuantity(pricing.composition, legacyMetalContent);
+  const fallbackParsed = parseNumber(fallbackPrice);
+  const fallbackRounded = fallbackParsed >= 0 ? roundCurrency(fallbackParsed) : 0;
+  const finalPrice = hasMetals ? pricing.price : fallbackRounded;
+
+  return {
+    composition: pricing.composition,
+    summary: pricing.summary,
+    price: finalPrice,
+    calculatedPrice: pricing.price,
+    hasMetals
+  };
+};
+
+const normalizeProductResponse = (doc, partnerPercentage = null) => {
+  if (!doc) return doc;
+  const product = doc.toObject ? doc.toObject() : doc;
+
+  const rawImages = Array.isArray(product.images)
+    ? product.images
+    : product.image
+      ? [product.image]
+      : [];
+  product.images = normalizeImagesInput(rawImages);
+
+  if (product.specifications instanceof Map) {
+    product.specifications = Object.fromEntries(product.specifications.entries());
+  } else if (!product.specifications || typeof product.specifications !== 'object') {
+    product.specifications = {};
+  }
+
+  const summary = product.metalSummary && typeof product.metalSummary === 'object'
+    ? product.metalSummary
+    : { totalMetalValueBRL: 0, totalWeightKg: 0 };
+
+  product.metalSummary = {
+    totalMetalValueBRL: roundCurrency(summary.totalMetalValueBRL ?? 0),
+    totalWeightKg: normalizeMetalValue(summary.totalWeightKg ?? 0)
+  };
+
+  const composition = Array.isArray(product.metalComposition)
+    ? product.metalComposition
+    : [];
+  product.metalComposition = buildMetalTechnicalSheet(composition);
+
+  // Preço personalizado para parceiro, se percentual fornecido
+  if (partnerPercentage && Number.isFinite(partnerPercentage)) {
+    const pct = Math.max(0, Math.min(100, Number(partnerPercentage)));
+    product.partnerPrice = roundCurrency(product.price * (pct / 100));
+  }
+  return product;
+};
+
+export const createProduct = async (req, res) => {
+  try {
+    const {
+      name,
+      description,
+      brand,
+      price,
+      category,
+      images,
+      specifications,
+      sku,
+      purchasePanelStyle,
+      stock
+    } = req.body;
+
+    const compositionInput = extractMetalCompositionInput(req.body);
+    const legacyMetalContent = req.body.metalContent;
+    const settings = await fetchNormalizedMetalPricingSettings();
+    const pricingSnapshot = buildPricingSnapshot({
+      compositionInput,
+      fallbackPrice: price,
+      legacyMetalContent,
+      settings
+    });
+
+    const product = new Product({
+      name,
+      description,
+      brand,
+      price: pricingSnapshot.price,
+      category,
+      stock: normalizeStockValue(stock),
+      images: normalizeImagesInput(images),
+      specifications: normalizeSpecificationsInput(specifications),
+      sku: sanitizeText(sku),
+      purchasePanelStyle: purchasePanelStyle || 'highlight',
+      metalComposition: pricingSnapshot.composition,
+      metalSummary: pricingSnapshot.summary,
+      updatedAt: new Date()
+    });
+
+    await product.save();
+    res.status(201).json({ message: 'Produto criado com sucesso', product: normalizeProductResponse(product) });
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao criar produto', error: error.message });
+  }
+};
+
+export const getAllProducts = async (req, res) => {
+  try {
+    const { category, search, minPrice, maxPrice } = req.query;
+    const query = { isActive: true };
+
+    if (category) query.category = category;
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } },
+        { brand: { $regex: search, $options: 'i' } }
+      ];
+    }
+    if (minPrice || maxPrice) {
+      query.price = {};
+      if (minPrice) query.price.$gte = parseFloat(minPrice);
+      if (maxPrice) query.price.$lte = parseFloat(maxPrice);
+    }
+
+    const products = await Product.find(query).sort({ createdAt: -1 });
+    const pct = req.user?.partnerPercentage ?? null;
+    res.json(products.map((p) => normalizeProductResponse(p, pct)));
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao buscar produtos', error: error.message });
+  }
+};
+
+export const getProductById = async (req, res) => {
+  try {
+    const productDoc = await Product.findById(req.params.id);
+    if (!productDoc) {
+      return res.status(404).json({ message: 'Produto não encontrado' });
+    }
+    const pct = req.user?.partnerPercentage ?? null;
+    res.json(normalizeProductResponse(productDoc, pct));
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao buscar produto', error: error.message });
+  }
+};
+
+export const updateProduct = async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) {
+      return res.status(404).json({ message: 'Produto não encontrado' });
+    }
+
+    const {
+      name,
+      description,
+      brand,
+      price,
+      category,
+      images,
+      specifications,
+      purchasePanelStyle,
+      stock
+    } = req.body;
+
+    const compositionInput = extractMetalCompositionInput(req.body);
+    const effectiveComposition = compositionInput.length > 0 ? compositionInput : product.metalComposition;
+    const legacyMetalContent = req.body.metalContent ?? product.metalContent;
+    const settings = await fetchNormalizedMetalPricingSettings();
+    const pricingSnapshot = buildPricingSnapshot({
+      compositionInput: effectiveComposition,
+      fallbackPrice: price ?? product.price,
+      legacyMetalContent,
+      settings
+    });
+
+    product.name = name ?? product.name;
+    product.description = description ?? product.description;
+    product.brand = brand ?? product.brand;
+    product.category = category ?? product.category;
+    product.price = pricingSnapshot.price;
+    product.stock = normalizeStockValue(stock ?? product.stock);
+    product.sku = sanitizeText(req.body.sku ?? product.sku);
+    product.purchasePanelStyle = purchasePanelStyle || product.purchasePanelStyle;
+
+    if (images !== undefined) {
+      product.images = normalizeImagesInput(images);
+    }
+
+    if (specifications !== undefined) {
+      product.specifications = normalizeSpecificationsInput(specifications, product.specifications);
+    }
+
+    product.metalComposition = pricingSnapshot.composition;
+    product.metalSummary = pricingSnapshot.summary;
+    product.updatedAt = new Date();
+
+    await product.save();
+    res.json({ message: 'Produto atualizado', product: normalizeProductResponse(product) });
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao atualizar produto', error: error.message });
+  }
+};
+
+export const deleteProduct = async (req, res) => {
+  try {
+    const product = await Product.findByIdAndUpdate(
+      req.params.id,
+      { isActive: false, updatedAt: new Date() },
+      { new: true }
+    );
+
+    if (!product) {
+      return res.status(404).json({ message: 'Produto não encontrado' });
+    }
+
+    res.json({ message: 'Produto deletado', product: normalizeProductResponse(product) });
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao deletar produto', error: error.message });
+  }
+};
+
+export const getCategories = async (req, res) => {
+  try {
+    const categories = await Product.distinct('category', { isActive: true });
+    res.json(categories);
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao buscar categorias', error: error.message });
+  }
+};
+
+export const recalculateAllMetalPrices = async (req, res) => {
+  try {
+    const normalizedSettings = await fetchNormalizedMetalPricingSettings();
+    const products = await Product.find({ isActive: true });
+    let updatedCount = 0;
+
+    for (const product of products) {
+      const pricing = computeProductPricing({
+        composition: Array.isArray(product.metalComposition) ? product.metalComposition : [],
+        settings: normalizedSettings,
+        legacyMetalContent: product.metalContent
+      });
+
+      const hasMetals = hasAnyMetalQuantity(pricing.composition, product.metalContent);
+      const nextPrice = hasMetals ? pricing.price : product.price;
+
+      product.metalComposition = pricing.composition;
+      product.metalSummary = pricing.summary;
+      if (hasMetals) {
+        product.price = nextPrice;
+      }
+      product.updatedAt = new Date();
+      await product.save();
+      updatedCount += 1;
+    }
+
+    res.json({ message: 'Preços recalculados com sucesso', updatedCount });
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao recalcular preços', error: error.message });
+  }
+};
