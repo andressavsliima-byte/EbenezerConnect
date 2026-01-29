@@ -51,6 +51,13 @@ export const productsAPI = {
   update: (id, data) => api.put(`/products/${id}`, data),
   delete: (id) => api.delete(`/products/${id}`),
   recalculateMetals: () => api.post('/products/recalculate-metals'),
+  importPrices: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/products/import-prices', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+  },
 };
 
 // Orders APIs

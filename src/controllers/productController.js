@@ -370,3 +370,134 @@ export const recalculateAllMetalPrices = async (req, res) => {
     res.status(500).json({ message: 'Erro ao recalcular preços', error: error.message });
   }
 };
+
+export const importPricesFromSpreadsheet = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'Nenhum arquivo foi enviado' });
+    }
+
+    // Importar biblioteca xlsx dinamicamente
+    const XLSX = await import('xlsx');
+    
+    // Ler o arquivo Excel
+    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    
+    // Converter para JSON
+    const data = XLSX.utils.sheet_to_json(worksheet);
+    
+    if (!data || data.length === 0) {
+      return res.status(400).json({ message: 'Planilha vazia ou formato inválido' });
+    }
+
+    const results = [];
+    const skuMap = new Map(); // Para detectar duplicatas
+    let updatedCount = 0;
+    let errorCount = 0;
+
+    for (const row of data) {
+      // Normalizar nomes das colunas (aceitar variações)
+      const sku = sanitizeText(row.SKU || row.sku || row.Sku || '');
+      const productName = sanitizeText(row['Nome do Produto'] || row.nome || row.Name || '');
+      const newPriceRaw = row['Novo Preço'] || row['Novo Preco'] || row.price || row.Price || row.preco;
+
+      // Validar SKU
+      if (!sku) {
+        results.push({
+          sku: sku || 'N/A',
+          name: productName,
+          status: 'error',
+          message: 'SKU não informado'
+        });
+        errorCount++;
+        continue;
+      }
+
+      // Detectar SKU duplicado na planilha
+      if (skuMap.has(sku)) {
+        results.push({
+          sku,
+          name: productName,
+          status: 'error',
+          message: 'SKU duplicado na planilha'
+        });
+        errorCount++;
+        continue;
+      }
+      skuMap.set(sku, true);
+
+      // Validar e converter preço
+      let newPrice;
+      if (typeof newPriceRaw === 'string') {
+        // Substituir vírgula por ponto e remover espaços
+        const cleanPrice = newPriceRaw.replace(',', '.').trim();
+        newPrice = parseFloat(cleanPrice);
+      } else {
+        newPrice = parseFloat(newPriceRaw);
+      }
+
+      if (isNaN(newPrice) || newPrice < 0) {
+        results.push({
+          sku,
+          name: productName,
+          newPrice: newPriceRaw,
+          status: 'error',
+          message: 'Preço inválido (deve ser um número positivo)'
+        });
+        errorCount++;
+        continue;
+      }
+
+      // Buscar produto no banco
+      const product = await Product.findOne({ sku });
+      
+      if (!product) {
+        results.push({
+          sku,
+          name: productName,
+          newPrice,
+          status: 'error',
+          message: 'Produto não encontrado'
+        });
+        errorCount++;
+        continue;
+      }
+
+      // Atualizar preço
+      const oldPrice = product.price;
+      product.price = roundCurrency(newPrice);
+      product.updatedAt = new Date();
+      await product.save();
+
+      results.push({
+        sku,
+        name: product.name,
+        oldPrice: roundCurrency(oldPrice),
+        newPrice: roundCurrency(newPrice),
+        status: 'success'
+      });
+      updatedCount++;
+    }
+
+    // Log da importação
+    console.log(`[PRICE IMPORT] User: ${req.user.email} | Updated: ${updatedCount} | Errors: ${errorCount}`);
+
+    res.json({
+      success: true,
+      summary: {
+        total: data.length,
+        updated: updatedCount,
+        errors: errorCount
+      },
+      results
+    });
+  } catch (error) {
+    console.error('Erro ao importar preços:', error);
+    res.status(500).json({ 
+      message: 'Erro ao processar planilha', 
+      error: error.message 
+    });
+  }
+};

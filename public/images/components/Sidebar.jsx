@@ -1,6 +1,6 @@
 
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, User, Package, Settings, ShoppingCart, Heart, LogOut, ClipboardList } from 'lucide-react';
+import { LayoutDashboard, User, Package, Settings, ShoppingCart, Heart, LogOut, ClipboardList, Upload } from 'lucide-react';
 import { useMemo, useState, useEffect } from 'react';
 
 export default function Sidebar() {
@@ -68,6 +68,11 @@ export default function Sidebar() {
 						<Link to="/admin/produtos" className="group flex items-center px-3 py-3 rounded-md text-white hover:bg-[#4e7330]">
 							<Package className="w-5 h-5 text-white/80 group-hover:text-white" />
 							<span className="ml-3">Produtos</span>
+						</Link>
+
+						<Link to="/admin/importar-precos" className="group flex items-center px-3 py-3 rounded-md text-white hover:bg-[#4e7330]">
+							<Upload className="w-5 h-5 text-white/80 group-hover:text-white" />
+							<span className="ml-3">Importar Preços</span>
 						</Link>
 
 						<Link to="/admin" className="group flex items-center px-3 py-3 rounded-md text-white hover:bg-[#4e7330]">
