@@ -15,6 +15,7 @@ import AdminOrders from './pages/AdminOrders';
 import AdminUsers from './pages/AdminUsers';
 import AdminMessages from './pages/AdminMessages';
 import AdminPromos from './pages/AdminPromos';
+import AdminPriceImport from './pages/AdminPriceImport';
 import ProtectedRoute from './components/ProtectedRoute';
 import MobileTabBar from './components/MobileTabBar';
 import UnipamLogin from './pages/UnipamLogin';
@@ -65,6 +66,7 @@ function AppContent() {
         <Route path="/admin/usuarios" element={<ProtectedRoute adminOnly><AdminUsers /></ProtectedRoute>} />
         <Route path="/admin/promos" element={<ProtectedRoute adminOnly><AdminPromos /></ProtectedRoute>} />
         <Route path="/admin/mensagens" element={<ProtectedRoute adminOnly><AdminMessages /></ProtectedRoute>} />
+        <Route path="/admin/importar-precos" element={<ProtectedRoute adminOnly><AdminPriceImport /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
       {showMobileTabs && <MobileTabBar />}
