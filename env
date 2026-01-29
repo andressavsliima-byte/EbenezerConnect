@@ -1,0 +1,2 @@
+# Cloudflare Turnstile public test key (permanent fallback for dev)
+VITE_TURNSTILE_SITE_KEY=1x00000000000000000000AA
