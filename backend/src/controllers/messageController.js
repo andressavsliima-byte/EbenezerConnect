@@ -2,7 +2,7 @@ import Message from '../models/Message.js';
 
 export const getAdminMessages = async (req, res) => {
   try {
-    const messages = await Message.find({ recipientId: req.user.userId })
+    const messages = await Message.find({ recipientId: req.user.userId, deletedAt: null })
       .populate('senderId', 'name company email')
       .populate('orderId')
       .sort({ createdAt: -1 });
@@ -15,7 +15,7 @@ export const getAdminMessages = async (req, res) => {
 
 export const getUserMessages = async (req, res) => {
   try {
-    const messages = await Message.find({ senderId: req.user.userId })
+    const messages = await Message.find({ senderId: req.user.userId, deletedAt: null })
       .populate('recipientId', 'name')
       .populate('orderId')
       .sort({ createdAt: -1 });
@@ -28,13 +28,18 @@ export const getUserMessages = async (req, res) => {
 
 export const markAsRead = async (req, res) => {
   try {
-    const message = await Message.findByIdAndUpdate(
-      req.params.id,
-      { isRead: true },
+    const isRead = typeof req.body?.isRead === 'boolean' ? req.body.isRead : true;
+    const message = await Message.findOneAndUpdate(
+      { _id: req.params.id, recipientId: req.user.userId, deletedAt: null },
+      { isRead },
       { new: true }
     );
 
-    res.json({ message: 'Mensagem marcada como lida', message });
+    if (!message) {
+      return res.status(404).json({ message: 'Mensagem não encontrada' });
+    }
+
+    res.json({ message: isRead ? 'Mensagem marcada como lida' : 'Mensagem marcada como não lida', message });
   } catch (error) {
     res.status(500).json({ message: 'Erro ao atualizar mensagem', error: error.message });
   }
@@ -44,7 +49,8 @@ export const getUnreadCount = async (req, res) => {
   try {
     const count = await Message.countDocuments({
       recipientId: req.user.userId,
-      isRead: false
+      isRead: false,
+      deletedAt: null
     });
 
     res.json({ unreadCount: count });
@@ -59,15 +65,70 @@ export const deleteMessage = async (req, res) => {
       return res.status(403).json({ message: 'Acesso negado' });
     }
 
-    const message = await Message.findById(req.params.id);
+    const message = await Message.findOne({ _id: req.params.id, recipientId: req.user.userId, deletedAt: null });
+    if (!message) {
+      return res.status(404).json({ message: 'Mensagem não encontrada' });
+    }
+
+    message.deletedAt = new Date();
+    await message.save();
+
+    res.json({ message: 'Mensagem movida para a lixeira com sucesso' });
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao excluir mensagem', error: error.message });
+  }
+};
+
+export const getTrashMessages = async (req, res) => {
+  try {
+    const messages = await Message.find({ recipientId: req.user.userId, deletedAt: { $ne: null } })
+      .populate('senderId', 'name company email')
+      .populate('orderId')
+      .sort({ deletedAt: -1 });
+
+    res.json(messages);
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao carregar lixeira', error: error.message });
+  }
+};
+
+export const restoreMessage = async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Acesso negado' });
+    }
+
+    const message = await Message.findOneAndUpdate(
+      { _id: req.params.id, recipientId: req.user.userId, deletedAt: { $ne: null } },
+      { deletedAt: null },
+      { new: true }
+    );
+
+    if (!message) {
+      return res.status(404).json({ message: 'Mensagem não encontrada na lixeira' });
+    }
+
+    res.json({ message: 'Mensagem restaurada', data: message });
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao restaurar mensagem', error: error.message });
+  }
+};
+
+export const hardDeleteMessage = async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Acesso negado' });
+    }
+
+    const message = await Message.findOne({ _id: req.params.id, recipientId: req.user.userId });
     if (!message) {
       return res.status(404).json({ message: 'Mensagem não encontrada' });
     }
 
     await message.deleteOne();
 
-    res.json({ message: 'Mensagem excluída com sucesso' });
+    res.json({ message: 'Mensagem excluída permanentemente' });
   } catch (error) {
-    res.status(500).json({ message: 'Erro ao excluir mensagem', error: error.message });
+    res.status(500).json({ message: 'Erro ao excluir permanentemente', error: error.message });
   }
 };

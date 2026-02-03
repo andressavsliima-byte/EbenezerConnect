@@ -1,22 +1,19 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { productsAPI } from '../api';
-import { Search, Filter, ShoppingCart, Package, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
-import { getPrimaryProductImage } from '../utils/productUtils';
-import { flyToCart } from '../utils/flyToCart';
-import MobileCatalogHero from '../components/MobileCatalogHero';
+import { Search, AlertCircle, Package, LayoutGrid, ClipboardList, Heart, ShoppingCart, User, LogOut } from 'lucide-react';
 import TopSearchBar from '../components/TopSearchBar';
-import { promosAPI } from '../api';
+import { getPrimaryProductImage } from '../utils/productUtils';
 
 export default function Catalog() {
+  const navigate = useNavigate();
   const [products, setProducts] = useState([]);
-  const [promos, setPromos] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   // Removido toast visual conforme solicitado
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [bannerIndex, setBannerIndex] = useState(0);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
   // Filtros
   const [filters, setFilters] = useState({
@@ -33,31 +30,17 @@ export default function Catalog() {
     fetchProducts();
   }, []);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const { data } = await promosAPI.getPublic();
-        const list = Array.isArray(data) ? data.filter(p => p.active) : [];
-        setPromos(list);
-      } catch (e) {
-        setPromos([]);
-      }
-    })();
-  }, []);
-
-  useEffect(() => {
-    if (promos.length <= 1) return;
-    const id = setInterval(() => setBannerIndex((i) => (i + 1) % promos.length), 6000);
-    return () => clearInterval(id);
-  }, [promos.length]);
-
-  const prevBanner = () => setBannerIndex((i) => (i - 1 + promos.length) % promos.length);
-  const nextBanner = () => setBannerIndex((i) => (i + 1) % promos.length);
+  // Banners removidos do catálogo
 
   useEffect(() => {
     const storedToken = localStorage.getItem('token');
     setIsAuthenticated(Boolean(storedToken));
   }, []);
+
+  useEffect(() => {
+    document.body.style.overflow = isMobileMenuOpen ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [isMobileMenuOpen]);
 
   const currencyFormatter = useMemo(() => (
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -115,83 +98,114 @@ export default function Catalog() {
     setTimeout(fetchProducts, 100);
   };
 
-  const addToCart = (product, evtTarget) => {
-    const cart = JSON.parse(localStorage.getItem('cart') || '[]');
-    const existingItem = cart.find(item => item._id === product._id);
+  const emptyTitle = filters.search ? 'Produto não encontrado' : 'Nenhum produto encontrado';
+  const emptyDescription = filters.search
+    ? 'Confirme o SKU digitado ou tente outro termo.'
+    : 'Tente ajustar os filtros ou fazer uma nova busca';
 
-    if (existingItem) {
-      existingItem.quantity += 1;
-    } else {
-      cart.push({ ...product, quantity: 1 });
-    }
-
-    localStorage.setItem('cart', JSON.stringify(cart));
-    
-    // Disparar evento para atualizar navbar
-    window.dispatchEvent(new Event('cartUpdated'));
-    
-    // Animação de voo até o carrinho
+  const handleLogout = () => {
     try {
-      const card = evtTarget?.closest?.('.card-product');
-      if (card) {
-        const imgEl = card.querySelector('img');
-        const src = imgEl?.src || getPrimaryProductImage(product);
-        flyToCart(imgEl || card, src);
+      const uStr = localStorage.getItem('user');
+      if (uStr) {
+        const u = JSON.parse(uStr);
+        localStorage.setItem('lastEmail', u?.email || '');
       }
     } catch {}
-
-    // Toast removido: manter apenas animação e atualização de carrinho
+    localStorage.removeItem('token');
+    navigate('/');
+    setIsMobileMenuOpen(false);
   };
 
   return (
-    <div className="container-page">
-      {/* Barra superior de busca (estilo exemplo) */}
-      <TopSearchBar
-        value={filters.search}
-        onChange={(val) => setFilters((f) => ({ ...f, search: val }))}
-        onSubmit={fetchProducts}
-      />
-      {/* Mobile-only promo header before products */}
-      <div className="md:hidden mb-4">
-        <MobileCatalogHero />
+    <>
+      {/* Desktop header com logo e busca */}
+      <div className="hidden md:block sticky top-0 z-[90] bg-[#4e7330]">
+        <TopSearchBar
+          withLogo
+          sticky
+          value={filters.search}
+          onChange={(val) => setFilters((f) => ({ ...f, search: val }))}
+          onSubmit={fetchProducts}
+        />
       </div>
-      {/* Desktop banner carousel */}
-      {promos.length > 0 && (
-        <div className="hidden md:block mb-6">
-          {/* Desktop banner carousel */}
-          <div className="relative overflow-hidden rounded-2xl shadow-xl -mx-16">
-            <a href={promos[bannerIndex]?.linkUrl || '#'} className="block">
-              <img
-                src={promos[bannerIndex]?.imageUrl}
-                alt={promos[bannerIndex]?.title || 'Banner'}
-                className="w-full h-[280px] object-cover"
-                onError={(e) => { e.currentTarget.src = '/images/placeholder.jpg'; }}
+
+      {/* Mobile header verde com busca compacta */}
+      <div className="md:hidden w-full bg-[#4e7330] text-white py-6 px-4 flex items-center gap-3">
+        <div className="flex-1 max-w-[78%]">
+          <form onSubmit={(e) => { e.preventDefault(); fetchProducts(); }}>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Buscar no catálogo"
+                className="w-full bg-white text-gray-800 placeholder-gray-400 rounded-full pl-4 pr-12 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-white shadow-md"
+                value={filters.search}
+                onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
               />
-            </a>
-            {promos.length > 1 && (
-              <>
-                <button onClick={prevBanner} className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white rounded-full p-2 shadow">
-                  <ChevronLeft className="w-5 h-5 text-emerald-600" />
-                </button>
-                <button onClick={nextBanner} className="absolute right-4 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white rounded-full p-2 shadow">
-                  <ChevronRight className="w-5 h-5 text-emerald-600" />
-                </button>
-                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2">
-                  {promos.map((_, i) => (
-                    <button
-                      key={i}
-                      aria-label={`Ir para banner ${i+1}`}
-                      onClick={() => setBannerIndex(i)}
-                      className={`h-2.5 w-2.5 rounded-full ${i===bannerIndex ? 'bg-white' : 'bg-white/60'} shadow border border-white/40`}
-                    />
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
+              <button
+                type="submit"
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center shadow"
+                aria-label="Buscar"
+              >
+                <Search className="w-4 h-4" />
+              </button>
+            </div>
+          </form>
         </div>
+        <button
+          type="button"
+          onClick={() => setIsMobileMenuOpen(true)}
+          className="w-12 h-12 ml-[1.85rem] rounded-md border border-white/50 flex flex-col items-center justify-center gap-1 bg-white/10"
+          aria-label="Menu"
+        >
+          <span className="w-6 h-[2px] bg-white rounded-full"></span>
+          <span className="w-6 h-[2px] bg-white rounded-full"></span>
+          <span className="w-6 h-[2px] bg-white rounded-full"></span>
+        </button>
+      </div>
+
+      {/* Mobile side menu */}
+      {isMobileMenuOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-black/40"
+            onClick={() => setIsMobileMenuOpen(false)}
+            aria-hidden
+          ></div>
+          <div className="fixed inset-y-0 left-0 z-50 w-[78vw] max-w-xs bg-[#e6ecc4] shadow-2xl flex flex-col">
+            <div className="p-5 pb-2">
+              <img src="/images/logo-branca.png" alt="Recicla Ebenezer" className="w-60 h-auto -ml-4" />
+            </div>
+            <nav className="flex-1 overflow-y-auto px-4 pb-6 space-y-2 text-[#405023] text-base font-medium">
+              <Link to="/catalogo" className="flex items-center gap-3 py-3" onClick={() => setIsMobileMenuOpen(false)}>
+                <LayoutGrid className="w-5 h-5" />
+                <span>Catálogo</span>
+              </Link>
+              <Link to="/pedidos" className="flex items-center gap-3 py-3" onClick={() => setIsMobileMenuOpen(false)}>
+                <ClipboardList className="w-5 h-5" />
+                <span>Pedidos</span>
+              </Link>
+              <Link to="/favoritos" className="flex items-center gap-3 py-3" onClick={() => setIsMobileMenuOpen(false)}>
+                <Heart className="w-5 h-5" />
+                <span>Favoritos</span>
+              </Link>
+              <Link to="/carrinho" className="flex items-center gap-3 py-3" onClick={() => setIsMobileMenuOpen(false)}>
+                <ShoppingCart className="w-5 h-5" />
+                <span>Carrinho</span>
+              </Link>
+              <Link to="/perfil" className="flex items-center gap-3 py-3" onClick={() => setIsMobileMenuOpen(false)}>
+                <User className="w-5 h-5" />
+                <span>Perfil</span>
+              </Link>
+              <button type="button" className="flex items-center gap-3 py-3 text-left w-full" onClick={handleLogout}>
+                <LogOut className="w-5 h-5" />
+                <span>Sair</span>
+              </button>
+            </nav>
+          </div>
+        </>
       )}
-      {/* Hero de busca removido conforme solicitado */}
+
+      <div className="px-3 md:px-6 lg:px-10 py-4 md:py-8 max-w-7xl mx-auto">
 
       {/* Mensagem de Erro */}
       {error && (
@@ -213,10 +227,10 @@ export default function Catalog() {
         <div className="text-center py-20">
           <Package className="w-20 h-20 text-gray-300 mx-auto mb-4" />
           <h3 className="text-2xl font-bold text-gray-900 mb-2">
-            Nenhum produto encontrado
+            {emptyTitle}
           </h3>
           <p className="text-gray-600 mb-6">
-            Tente ajustar os filtros ou fazer uma nova busca
+            {emptyDescription}
           </p>
           <button onClick={clearFilters} className="btn-primary">
             Limpar Filtros
@@ -226,11 +240,7 @@ export default function Catalog() {
 
       {!loading && products.length > 0 && (
         <>
-          <div className="mb-4 text-gray-600">
-            Mostrando {products.length} produto{products.length !== 1 ? 's' : ''}
-          </div>
-          
-          <div className="grid-products gap-4 sm:gap-6">
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-6">
             {products.map((product) => {
               const imageUrl = getPrimaryProductImage(product);
               const priceValue = typeof product.price === 'number' ? product.price : 0;
@@ -244,65 +254,46 @@ export default function Catalog() {
                     .slice(0, 2)
                     .toUpperCase()
                 : '—';
-              const topMetals = Array.isArray(product?.metalComposition)
-                ? [...product.metalComposition]
-                    .sort((a, b) => (b?.quantityKg || 0) - (a?.quantityKg || 0))
-                    .slice(0, 2)
-                : [];
               const skuLabel = product?.sku || product?._id?.slice(-6) || '—';
+              const priceLabel = isAuthenticated ? formattedPrice : 'Faça login para ver os preços';
               return (
-                <div key={product._id} className="card-product flex flex-col h-full rounded-2xl sm:rounded-3xl border border-gray-100">
-                  <Link to={`/produto/${product._id}`} className="block px-3 pt-3 sm:px-6 sm:pt-6">
-                    <div className="relative h-44 sm:h-56 bg-gray-100 rounded-xl sm:rounded-2xl flex items-center justify-center overflow-hidden shadow-inner">
-                      <img
-                        src={imageUrl}
-                        alt={product.name}
-                        className="max-h-full max-w-full object-contain transition-transform duration-300 hover:scale-105"
-                        onError={(e) => {
-                          e.currentTarget.src = '/images/placeholder.svg';
-                        }}
-                      />
-                      {product.stock === 0 && (
-                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                          <span className="text-white font-semibold tracking-wide">
-                            SEM ESTOQUE
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </Link>
-
-                  <div className="flex-1 px-3 pb-3 sm:px-6 sm:pb-6 flex flex-col">
-                    <Link to={`/produto/${product._id}`} className="mt-3">
-                      <h3 className="text-base sm:text-xl font-semibold text-gray-900 leading-tight line-clamp-2 hover:text-ebenezer-green transition-colors">
-                        {product.name}
-                      </h3>
-                    </Link>
-                    <p className="text-[11px] sm:text-sm text-gray-500 mt-1 uppercase tracking-wide">
-                      {product.brand}
-                    </p>
-
-                    {/* seção de conteúdo de metais removida conforme solicitado */}
-
-                    <div className="mt-auto pt-3 sm:pt-6 border-t border-gray-100 flex items-center gap-3 sm:gap-4">
-                      <div className="w-10 h-10 sm:w-14 sm:h-14 rounded-full border border-emerald-100 flex items-center justify-center bg-white shadow-sm">
-                        <span className="text-[11px] sm:text-sm font-semibold text-emerald-600">{brandInitials}</span>
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-[11px] sm:text-sm text-gray-500 font-medium">{skuLabel}</p>
-                        <p className="text-sm sm:text-base font-semibold text-ebenezer-green">
-                          {isAuthenticated ? formattedPrice : 'Faça login para ver os preços'}
-                        </p>
-                      </div>
-                      {/* Botão "Ver detalhes" removido: clique na imagem/título já abre detalhes */}
-                    </div>
+                <Link
+                  key={product._id}
+                  to={`/produto/${product._id}`}
+                  className="block bg-white rounded-xl shadow-md md:shadow border border-gray-100 overflow-hidden"
+                >
+                  <div className="h-40 bg-white flex items-center justify-center p-3 md:p-4">
+                    <img
+                      src={imageUrl}
+                      alt={product.name}
+                      className="max-h-full max-w-full object-contain"
+                      onError={(e) => {
+                        e.currentTarget.src = '/images/placeholder.svg';
+                      }}
+                    />
                   </div>
-                </div>
+                  <div className="px-3 md:px-4 pt-2 pb-1">
+                    <h3 className="text-sm md:text-base font-semibold text-gray-900 leading-tight line-clamp-2">
+                      {product.name}
+                    </h3>
+                    <p className="text-[12px] text-gray-500 uppercase mt-1">{product.brand}</p>
+                  </div>
+                  <div className="px-3 md:px-4 pb-3 md:pb-4">
+                    <div className="flex items-center gap-2 text-[11px] text-gray-600">
+                      <span className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-[11px] font-semibold text-ebenezer-green">
+                        {brandInitials}
+                      </span>
+                      <span className="text-[11px] text-gray-500">{skuLabel}</span>
+                    </div>
+                    <p className="text-lg md:text-xl font-extrabold text-[#6faf3a] mt-2">{priceLabel}</p>
+                  </div>
+                </Link>
               );
             })}
           </div>
         </>
       )}
-    </div>
+      </div>
+    </>
   );
 }

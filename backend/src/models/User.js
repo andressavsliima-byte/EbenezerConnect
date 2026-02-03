@@ -28,8 +28,14 @@ const userSchema = new mongoose.Schema({
   },
   partnerPercentage: {
     type: Number,
-    enum: [30, 35, 40],
+    min: 0,
+    max: 500,
     default: 35
+  },
+  partnerLevel: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'PartnerLevel',
+    default: null
   },
   isActive: {
     type: Boolean,

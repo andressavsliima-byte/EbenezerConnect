@@ -1,49 +1,39 @@
-import { useEffect, useState } from 'react';
-import { promosAPI } from '../api';
-import { ChevronLeft, ChevronRight, Tag, Zap, Star, Package, MapPin } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Tag, Zap, Star, Package } from 'lucide-react';
 
-export default function MobileCatalogHero() {
-  const [promos, setPromos] = useState([]);
-  const [index, setIndex] = useState(0);
+export default function MobileCatalogHero({ promos = [], bannerIndex = 0, setBannerIndex = () => {} }) {
+  // Mobile hero now receives `promos`, `bannerIndex` and `setBannerIndex` from parent
+  const index = bannerIndex || 0;
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const { data } = await promosAPI.getPublic();
-        setPromos(Array.isArray(data) ? data : []);
-      } catch (e) {
-        setPromos([]);
-      }
-    })();
-  }, []);
-
-  useEffect(() => {
-    if (promos.length <= 1) return;
-    const id = setInterval(() => setIndex((i) => (i + 1) % promos.length), 5000);
-    return () => clearInterval(id);
-  }, [promos.length]);
-
-  const prev = () => setIndex((i) => (i - 1 + promos.length) % promos.length);
-  const next = () => setIndex((i) => (i + 1) % promos.length);
+  // Desabilitar autoplay no mobile: somente troca ao clicar nas setas
+  const prev = () => {
+    if (!promos || promos.length <= 1) return;
+    setBannerIndex((i) => (i - 1 + promos.length) % promos.length);
+  };
+  const next = () => {
+    if (!promos || promos.length <= 1) return;
+    setBannerIndex((i) => (i + 1) % promos.length);
+  };
 
   return (
-    <div className="md:hidden space-y-3">
+    <div className="md:hidden space-y-3 relative">
       {/* localização/ofertas barra */}
-      <div className="flex items-center gap-2 text-white bg-red-500 rounded-xl px-3 py-2">
-        <MapPin className="w-4 h-4" />
-        <span className="text-sm font-medium">Ver ofertas para minha região</span>
+      <div className="flex items-center gap-2 text-white bg-ebenezer-green rounded-xl px-3 py-2 mb-4">
+        <span className="text-sm font-medium">Valorizamos seu catalisador com as melhores condições de compra</span>
       </div>
 
       {/* carrossel */}
       <div className="relative overflow-hidden rounded-2xl">
-        <div className="w-full h-36 bg-gray-100">
+        <div className="w-full h-36 bg-white" onTouchMove={(e) => e.stopPropagation()}>
           {promos.length > 0 ? (
             <a href={promos[index]?.linkUrl || '#'} className="block w-full h-full">
               <img
-                src={promos[index]?.imageUrl}
+                src={promos[index]?.imageMobileUrl || promos[index]?.imageUrl}
                 alt={promos[index]?.title || 'Promoção'}
+                loading="eager"
+                fetchpriority="high"
                 className="w-full h-full object-cover"
                 onError={(e) => { e.currentTarget.src = '/images/placeholder.jpg'; }}
+                draggable={false}
               />
             </a>
           ) : (
@@ -60,6 +50,9 @@ export default function MobileCatalogHero() {
             </button>
           </>
         )}
+
+        {/* Setas adicionais posicionadas para coincidir com o banner grande (lado esquerdo/direito) */}
+        {/* removed extra absolute arrows that used fixed pixel offsets to avoid layout shifts on small screens */}
       </div>
 
       {/* ações rápidas */}
@@ -75,8 +68,10 @@ export default function MobileCatalogHero() {
         <div className="overflow-hidden rounded-2xl">
           <a href={promos[(index + 1) % promos.length]?.linkUrl || '#'}>
             <img
-              src={promos[(index + 1) % promos.length]?.imageUrl}
+              src={promos[(index + 1) % promos.length]?.imageMobileUrl || promos[(index + 1) % promos.length]?.imageUrl}
               alt="Promo"
+              loading="eager"
+              fetchpriority="high"
               className="w-full h-28 object-cover"
               onError={(e) => { e.currentTarget.src = '/images/placeholder.jpg'; }}
             />
@@ -89,9 +84,9 @@ export default function MobileCatalogHero() {
 
 function QuickAction({ icon, label, href }) {
   return (
-    <a href={href} className="flex flex-col items-center justify-center bg-white rounded-xl p-3 border border-gray-200 shadow-sm">
+    <a href={href} className="flex flex-col items-center justify-center bg-gray-800 rounded-xl p-3 border border-gray-700 shadow-sm text-white">
       <div className="text-ebenezer-green">{icon}</div>
-      <span className="text-[11px] font-medium mt-1">{label}</span>
+      <span className="text-[11px] font-medium mt-1 text-white">{label}</span>
     </a>
   );
 }

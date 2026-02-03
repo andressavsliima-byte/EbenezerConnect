@@ -21,15 +21,16 @@ api.interceptors.response.use(
   (err) => {
     const status = err.response?.status;
     const message = err.response?.data?.message;
-    const shouldForceLogout =
-      status === 401 || (status === 403 && message === 'Usuário desativado');
 
-    if (shouldForceLogout) {
+    // 403 de usuário desativado continua forçando logout
+    if (status === 403 && message === 'Usuário desativado') {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      const redirectUrl = message === 'Usuário desativado' ? '/?reason=inactive' : '/';
-      window.location.href = redirectUrl;
+      window.location.href = '/?reason=inactive';
+      return Promise.reject(err);
     }
+
+    // 401 agora é tratado de forma branda: mantém token/user para evitar sumiço de dados locais
     return Promise.reject(err);
   }
 );
@@ -46,20 +47,25 @@ export const authAPI = {
 export const productsAPI = {
   getAll: (params) => api.get('/products', { params }),
   getById: (id) => api.get(`/products/${id}`),
+  getBySku: (sku) => api.get(`/products/sku/${encodeURIComponent(sku)}`),
   getCategories: () => api.get('/products/categories'),
   create: (data) => api.post('/products', data),
   update: (id, data) => api.put(`/products/${id}`, data),
   delete: (id) => api.delete(`/products/${id}`),
   recalculateMetals: () => api.post('/products/recalculate-metals'),
+  downloadPriceSheet: () => api.get('/products/price-sheet', { responseType: 'blob' }),
+  importPriceSheet: (formData) => api.post('/products/price-sheet/import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
 };
 
 // Orders APIs
 export const ordersAPI = {
   getAll: (params) => api.get('/orders', { params }),
   getById: (id) => api.get(`/orders/${id}`),
-  getMine: () => api.get('/orders/my-orders'),
+  getMine: () => api.get('/orders/user/my-orders'),
   create: (data) => api.post('/orders', data),
-  updateStatus: (id, status, note) => api.put(`/orders/${id}/status`, { status, adminNote: note }),
+  updateStatus: (id, status, note) => api.put(`/orders/${id}`, { status, adminNotes: note }),
   // Lixeira
   getTrash: () => api.get('/orders', { params: { trash: true } }),
   moveToTrash: (id) => api.put(`/orders/${id}/trash`),
@@ -80,8 +86,11 @@ export const usersAPI = {
 export const messagesAPI = {
   getAll: () => api.get('/messages'),
   getUnreadCount: () => api.get('/messages/unread/count'),
-  markAsRead: (id) => api.put(`/messages/${id}/read`),
-  delete: (id) => api.delete(`/messages/${id}`),
+  markAsRead: (id, isRead = true) => api.put(`/messages/${id}/read`, { isRead }),
+  moveToTrash: (id) => api.delete(`/messages/${id}`),
+  getTrash: () => api.get('/messages/trash'),
+  restore: (id) => api.put(`/messages/${id}/restore`),
+  hardDelete: (id) => api.delete(`/messages/${id}/hard`),
 };
 
 // Dashboard APIs
@@ -114,6 +123,16 @@ export const promosAPI = {
   create: (data) => api.post('/promos', data),
   update: (id, data) => api.put(`/promos/${id}`, data),
   remove: (id) => api.delete(`/promos/${id}`),
+  // Upload image directly attached to a promo (multipart form-data)
+  uploadImage: (id, formData, config = {}) => api.post(`/promos/${id}/upload`, formData, { headers: { 'Content-Type': 'multipart/form-data' }, ...config }),
+};
+
+// Partner Levels APIs
+export const partnerLevelsAPI = {
+  list: () => api.get('/partner-levels'),
+  create: (payload) => api.post('/partner-levels', payload),
+  update: (id, payload) => api.put(`/partner-levels/${id}`, payload),
+  remove: (id, force = false) => api.delete(`/partner-levels/${id}${force ? '?force=true' : ''}`),
 };
 
 export default api;

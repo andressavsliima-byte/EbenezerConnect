@@ -76,11 +76,10 @@ const recalculateProductsWithSettings = async (normalizedSettings) => {
   for (const product of products) {
     const pricing = computeProductPricing({
       composition: Array.isArray(product.metalComposition) ? product.metalComposition : [],
-      settings: normalizedSettings,
-      legacyMetalContent: product.metalContent
+      settings: normalizedSettings
     });
 
-    const hasMetals = hasAnyMetalQuantity(pricing.composition, product.metalContent);
+    const hasMetals = hasAnyMetalQuantity(pricing.composition);
     product.metalComposition = pricing.composition;
     product.metalSummary = pricing.summary;
     if (hasMetals) {

@@ -3,7 +3,10 @@ import mongoose from 'mongoose';
 const promoBannerSchema = new mongoose.Schema({
   title: { type: String },
   subtitle: { type: String },
-  imageUrl: { type: String, required: true },
+  // Prefer explicit desktop/mobile images. Keep `imageUrl` as fallback for backwards compatibility.
+  imageUrl: { type: String },
+  imageDesktopUrl: { type: String },
+  imageMobileUrl: { type: String },
   linkUrl: { type: String },
   active: { type: Boolean, default: true },
   order: { type: Number, default: 0 },

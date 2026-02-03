@@ -49,3 +49,29 @@ export const remove = async (req, res) => {
     res.status(400).json({ message: 'Erro ao remover banner', error: err.message });
   }
 };
+
+// Upload image and attach to a specific promo (desktop/mobile/legacy)
+export const uploadImageForPromo = async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo enviado' });
+
+    const protocol = req.protocol;
+    const host = req.get('host');
+    const imageUrl = `${protocol}://${host}/uploads/${req.file.filename}`;
+
+    const target = (req.body.target || req.query.target || 'desktop').toLowerCase();
+    const update = {};
+    if (target === 'mobile') update.imageMobileUrl = imageUrl;
+    else if (target === 'legacy') update.imageUrl = imageUrl;
+    else update.imageDesktopUrl = imageUrl;
+
+    update.updatedAt = new Date();
+
+    const banner = await PromoBanner.findByIdAndUpdate(req.params.id, update, { new: true });
+    if (!banner) return res.status(404).json({ message: 'Banner não encontrado' });
+
+    res.json({ message: 'Imagem enviada e banner atualizado', banner, url: imageUrl });
+  } catch (err) {
+    res.status(500).json({ message: 'Erro ao enviar imagem para o banner', error: err.message });
+  }
+};

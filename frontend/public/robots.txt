@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+# Atualize com o domínio final quando publicar
+Sitemap: https://seu-dominio.com/sitemap.xml

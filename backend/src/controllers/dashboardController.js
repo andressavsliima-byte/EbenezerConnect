@@ -5,6 +5,8 @@ import Message from '../models/Message.js';
 
 export const getAdminStats = async (req, res) => {
   try {
+    const orderFilter = { isDeleted: false };
+
     const [
       totalProducts,
       totalOrders,
@@ -17,18 +19,19 @@ export const getAdminStats = async (req, res) => {
       recentMessages
     ] = await Promise.all([
       Product.countDocuments(),
-      Order.countDocuments(),
-      Order.countDocuments({ status: 'pending' }),
+      Order.countDocuments(orderFilter),
+      Order.countDocuments({ ...orderFilter, status: 'pending' }),
       User.countDocuments({ role: 'partner' }),
       Message.countDocuments({ recipientId: req.user.userId, isRead: false }),
       Order.aggregate([
+        { $match: orderFilter },
         { $group: { _id: '$status', count: { $sum: 1 }, total: { $sum: '$totalAmount' } } }
       ]),
       Order.aggregate([
-        { $match: { status: 'confirmed' } },
+        { $match: { ...orderFilter, status: 'confirmed' } },
         { $group: { _id: null, total: { $sum: '$totalAmount' } } }
       ]),
-      Order.find()
+      Order.find(orderFilter)
         .sort({ createdAt: -1 })
         .limit(5)
         .populate('userId', 'name company email')

@@ -4,6 +4,9 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const uploadsDir = process.env.UPLOAD_DIR
+  ? path.resolve(process.env.UPLOAD_DIR)
+  : path.join(__dirname, '../../uploads');
 
 export const uploadImage = async (req, res) => {
   try {
@@ -36,7 +39,6 @@ export const deleteImage = async (req, res) => {
       return res.status(400).json({ message: 'Filename inválido' });
     }
 
-    const uploadsDir = path.join(__dirname, '../../uploads');
     const filePath = path.join(uploadsDir, filename);
 
     // Garantir que estamos deletando apenas dentro de uploads/

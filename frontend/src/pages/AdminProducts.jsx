@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { productsAPI, uploadAPI, settingsAPI } from '../api';
+import { productsAPI, uploadAPI } from '../api';
 import {
   Package,
   Plus,
@@ -11,14 +11,16 @@ import {
   Upload,
   AlertCircle,
   ArrowLeft,
-  RefreshCcw
+  RefreshCcw,
+  Download,
+  FileSpreadsheet
 } from 'lucide-react';
 import { getPrimaryProductImage } from '../utils/productUtils';
 import ConfirmDialog from '../components/ConfirmDialog';
 import Toast from '../components/Toast';
 
-// Removido bloqueio de chaves antigas relacionadas a metais
-const LEGACY_SPEC_KEYS = [];
+// Bloqueia campos legados que não devem mais ser exibidos
+const LEGACY_SPEC_KEYS = ['platina', 'paládio', 'paladio', 'ródio', 'rodio', 'estoque'];
 const DEFAULT_CURRENCY = 'BRL';
 
 const generateId = () => Math.random().toString(36).slice(2, 10);
@@ -105,7 +107,7 @@ const buildSpecsObject = (specList) => {
   (specList || []).forEach((item) => {
     const key = (item.key ?? '').trim();
     if (!key) return;
-    if (LEGACY_SPEC_KEYS.includes(key)) return;
+    if (LEGACY_SPEC_KEYS.includes(key.toLowerCase())) return;
     specsObject[key] = (item.value ?? '').toString().trim();
   });
   return specsObject;
@@ -120,6 +122,9 @@ export default function AdminProducts() {
   const [uploadMessage, setUploadMessage] = useState('');
   const [toast, setToast] = useState({ type: '', message: '' });
   const [confirmDialog, setConfirmDialog] = useState({ open: false, product: null, loading: false });
+  const [downloadingSheet, setDownloadingSheet] = useState(false);
+  const [importingSheet, setImportingSheet] = useState(false);
+  const fileInputRef = useRef(null);
   // Removidas configurações e linhas de metais
 
   const [formData, setFormData] = useState({
@@ -127,12 +132,12 @@ export default function AdminProducts() {
     description: '',
     brand: '',
     price: '',
-    stock: '',
     category: '',
     sku: '',
     images: [],
     specifications: {},
-    purchasePanelStyle: 'highlight'
+    purchasePanelStyle: 'highlight',
+    internalMetals: { platina: '', paladio: '', rodio: '' }
   });
 
   const [newSpec, setNewSpec] = useState({ key: '', value: '' });
@@ -172,6 +177,61 @@ export default function AdminProducts() {
     }
   };
 
+  const handleDownloadSheet = async () => {
+    setDownloadingSheet(true);
+    try {
+      const response = await productsAPI.downloadPriceSheet();
+      const blob = new Blob([response.data], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'planilha-valor-dos-produtos.xlsx';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      setToast({ type: 'success', message: 'Planilha atualizada pronta para download.' });
+    } catch (error) {
+      console.error('Erro ao gerar planilha:', error);
+      setToast({ type: 'error', message: 'Não foi possível gerar a planilha.' });
+    } finally {
+      setDownloadingSheet(false);
+    }
+  };
+
+  const handleImportSheet = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setImportingSheet(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await productsAPI.importPriceSheet(formData);
+      const { updatedCount = 0, notFound = [], skipped = [] } = response.data || {};
+
+      const parts = [];
+      if (updatedCount) parts.push(`${updatedCount} preço(s) atualizado(s)`);
+      if (skipped.length) parts.push(`${skipped.length} linha(s) ignorada(s) sem preço`);
+      if (notFound.length) parts.push(`SKU(s) não encontrados: ${notFound.join(', ')}`);
+
+      const message = parts.length ? parts.join(' | ') : 'Importação concluída';
+      const hasErrors = notFound.length > 0 || skipped.length > 0;
+      setToast({ type: hasErrors ? 'error' : 'success', message });
+      fetchProducts();
+    } catch (error) {
+      console.error('Erro ao importar planilha:', error);
+      const backendMsg = error?.response?.data?.message || error?.message || 'Erro ao importar planilha.';
+      setToast({ type: 'error', message: backendMsg });
+    } finally {
+      setImportingSheet(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
   // Removido fetch de configuração de metais
   // Removido cálculo automático de preço por metais
 
@@ -183,6 +243,16 @@ export default function AdminProducts() {
       ...formData,
       [e.target.name]: e.target.value
     });
+  };
+
+  const handleInternalMetalChange = (key, value) => {
+    setFormData((prev) => ({
+      ...prev,
+      internalMetals: {
+        ...(prev.internalMetals || {}),
+        [key]: value
+      }
+    }));
   };
 
   // Removidos manipuladores de linhas de metais
@@ -272,7 +342,7 @@ export default function AdminProducts() {
           ? Array.from(specifications.entries())
           : [];
       const additionalSpecs = entries
-        .filter(([key]) => !LEGACY_SPEC_KEYS.includes(key))
+        .filter(([key]) => !LEGACY_SPEC_KEYS.includes(String(key || '').toLowerCase()))
         .map(([key, value]) => ({ key, value: String(value ?? '') }));
       setSpecList(additionalSpecs);
 
@@ -283,12 +353,16 @@ export default function AdminProducts() {
         description: product.description ?? '',
         brand: product.brand ?? '',
         price: product.price ? product.price.toFixed(2) : '',
-        stock: product.stock !== undefined && product.stock !== null ? String(product.stock) : '',
         category: product.category ?? '',
         sku: product.sku ?? '',
         images: Array.isArray(product.images) && product.images.length > 0 ? product.images : [],
         specifications,
-        purchasePanelStyle: product.purchasePanelStyle || 'highlight'
+        purchasePanelStyle: product.purchasePanelStyle || 'highlight',
+        internalMetals: {
+          platina: formatDecimalForInput(product.internalMetals?.platina),
+          paladio: formatDecimalForInput(product.internalMetals?.paladio),
+          rodio: formatDecimalForInput(product.internalMetals?.rodio)
+        }
       });
     } else {
       setEditingProduct(null);
@@ -298,12 +372,12 @@ export default function AdminProducts() {
         description: '',
         brand: '',
         price: '',
-        stock: '',
         category: '',
         sku: '',
         images: [],
         specifications: {},
-        purchasePanelStyle: 'highlight'
+        purchasePanelStyle: 'highlight',
+        internalMetals: { platina: '', paladio: '', rodio: '' }
       });
     }
     setNewSpec({ key: '', value: '' });
@@ -330,12 +404,16 @@ export default function AdminProducts() {
         brand: formData.brand,
         // Preço agora é informado manualmente
         price: parseDecimalInput(formData.price),
-        stock: Number.parseInt(formData.stock, 10) || 0,
         category: formData.category,
         sku: formData.sku,
         images: formData.images || [],
         specifications: specsObject,
         purchasePanelStyle: formData.purchasePanelStyle || 'highlight',
+        internalMetals: {
+          platina: parseDecimalInput(formData.internalMetals.platina),
+          paladio: parseDecimalInput(formData.internalMetals.paladio),
+          rodio: parseDecimalInput(formData.internalMetals.rodio)
+        },
         // metalComposition removido do cadastro
       };
 
@@ -409,7 +487,7 @@ export default function AdminProducts() {
         onClose={() => setToast({ type: '', message: '' })}
       />
 
-      <div className="flex justify-between items-center mb-8">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-8">
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -423,10 +501,37 @@ export default function AdminProducts() {
             Gerenciar Produtos
           </h1>
         </div>
-        <button onClick={() => openModal()} className="btn-primary flex items-center gap-2">
-          <Plus className="w-5 h-5" />
-          Novo Produto
-        </button>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 w-full md:w-auto">
+          <button
+            onClick={handleDownloadSheet}
+            disabled={downloadingSheet}
+            className="btn-outline flex items-center justify-center gap-2 disabled:opacity-60 w-full"
+            title="Baixar planilha de preços"
+          >
+            <Download className="w-5 h-5" />
+            {downloadingSheet ? 'Gerando...' : 'Baixar planilha'}
+          </button>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importingSheet}
+            className="btn-outline flex items-center justify-center gap-2 disabled:opacity-60 w-full"
+            title="Importar preços atualizados"
+          >
+            <FileSpreadsheet className="w-5 h-5" />
+            {importingSheet ? 'Importando...' : 'Importar preços'}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            className="hidden"
+            onChange={handleImportSheet}
+          />
+          <button onClick={() => openModal()} className="btn-primary flex items-center justify-center gap-2 w-full">
+            <Plus className="w-5 h-5" />
+            Novo Produto
+          </button>
+        </div>
       </div>
 
       {/* Lista de Produtos */}
@@ -436,7 +541,6 @@ export default function AdminProducts() {
             <tr>
               <th>Nome</th>
               <th>Preço</th>
-              <th>Estoque</th>
               <th>Categoria</th>
               <th>Ações</th>
             </tr>
@@ -445,8 +549,9 @@ export default function AdminProducts() {
             {products.map((p) => (
               <tr key={p._id}>
                 <td className="font-semibold">{p.name}</td>
-                <td className="text-ebenezer-green font-bold">{p.price ? formatCurrencyBRL(p.price) : '—'}</td>
-                <td>{p.stock}</td>
+                <td className="text-ebenezer-green font-bold">
+                  {p.price === undefined || p.price === null ? '—' : formatCurrencyBRL(Number(p.price) || 0)}
+                </td>
                 <td>{p.category || '—'}</td>
                 <td>
                   <div className="flex gap-2">
@@ -504,10 +609,6 @@ export default function AdminProducts() {
                     <input name="sku" value={formData.sku} onChange={handleChange} className="input" />
                   </div>
                   <div>
-                    <label className="label">Estoque</label>
-                    <input name="stock" value={formData.stock} onChange={handleChange} className="input" type="number" min="0" />
-                  </div>
-                  <div>
                     <label className="label">Preço (R$)</label>
                     <input name="price" value={formData.price} onChange={handleChange} className="input" placeholder="Ex.: 210,00" />
                   </div>
@@ -515,6 +616,42 @@ export default function AdminProducts() {
                 <div>
                   <label className="label">Descrição</label>
                   <textarea name="description" value={formData.description} onChange={handleChange} className="input min-h-[120px] resize-y" />
+                </div>
+                {/* Metais internos (visível apenas no painel admin) */}
+                <div className="space-y-3 mt-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-gray-900">Metais (uso interno)</h3>
+                    <span className="text-xs text-gray-500">Não aparece na ficha técnica</span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="label">Platina (g)</label>
+                      <input
+                        className="input"
+                        value={formData.internalMetals?.platina ?? ''}
+                        onChange={(e) => handleInternalMetalChange('platina', e.target.value)}
+                        placeholder="Ex.: 12,5"
+                      />
+                    </div>
+                    <div>
+                      <label className="label">Paladio (g)</label>
+                      <input
+                        className="input"
+                        value={formData.internalMetals?.paladio ?? ''}
+                        onChange={(e) => handleInternalMetalChange('paladio', e.target.value)}
+                        placeholder="Ex.: 8,0"
+                      />
+                    </div>
+                    <div>
+                      <label className="label">Rodio (g)</label>
+                      <input
+                        className="input"
+                        value={formData.internalMetals?.rodio ?? ''}
+                        onChange={(e) => handleInternalMetalChange('rodio', e.target.value)}
+                        placeholder="Ex.: 3,2"
+                      />
+                    </div>
+                  </div>
                 </div>
                 {/* Upload de Imagens */}
                 <div className="space-y-3">
@@ -533,8 +670,8 @@ export default function AdminProducts() {
                   {Array.isArray(formData.images) && formData.images.length > 0 ? (
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                       {formData.images.map((img, index) => (
-                        <div key={`${img}-${index}`} className="border rounded-lg p-2 bg-white flex flex-col">
-                          <div className="relative h-28 sm:h-32 bg-gray-100 rounded-md overflow-hidden flex items-center justify-center">
+                          <div key={`${img}-${index}`} className="border rounded-lg p-2 bg-white flex flex-col">
+                            <div className="relative h-28 sm:h-32 bg-white rounded-md overflow-hidden flex items-center justify-center">
                             <img
                               src={img}
                               alt={`Imagem ${index + 1}`}
@@ -586,35 +723,6 @@ export default function AdminProducts() {
                         value={getSpecValue('Peso')}
                         onChange={(e) => setSpecValue('Peso', e.target.value)}
                         placeholder="Ex.: 1,250 kg"
-                      />
-                    </div>
-                    {/* Campos Torque e Tipo removidos conforme solicitado */}
-                    {/* Metais preciosos: quantidade */}
-                    <div>
-                      <label className="label">Platina (quantidade)</label>
-                      <input
-                        className="input"
-                        value={getSpecValue('Platina')}
-                        onChange={(e) => setSpecValue('Platina', e.target.value)}
-                        placeholder="Ex.: 0,250 g"
-                      />
-                    </div>
-                    <div>
-                      <label className="label">Paládio (quantidade)</label>
-                      <input
-                        className="input"
-                        value={getSpecValue('Paládio')}
-                        onChange={(e) => setSpecValue('Paládio', e.target.value)}
-                        placeholder="Ex.: 0,120 g"
-                      />
-                    </div>
-                    <div>
-                      <label className="label">Ródio (quantidade)</label>
-                      <input
-                        className="input"
-                        value={getSpecValue('Ródio')}
-                        onChange={(e) => setSpecValue('Ródio', e.target.value)}
-                        placeholder="Ex.: 0,030 g"
                       />
                     </div>
                   </div>

@@ -2,12 +2,6 @@ export const DEFAULT_CURRENCY_RATES = {
   usdToBrl: 5.2
 };
 
-export const LEGACY_METALS = [
-  { key: 'platinum', label: 'Platina' },
-  { key: 'palladium', label: 'Paládio' },
-  { key: 'rhodium', label: 'Ródio' }
-];
-
 const ROUNDING_FACTOR = 1_000_000; // keep metal values with precision up to 6 decimal places
 
 export const parseNumber = (value) => {
@@ -93,13 +87,7 @@ export const normalizeMetalKey = (value) => {
 
 const ensureArray = (value) => (Array.isArray(value) ? value : []);
 
-const legacyLabelFromKey = (key) => {
-  const normalizedKey = sanitizeString(key).toLowerCase();
-  const legacy = LEGACY_METALS.find((item) => item.key === normalizedKey);
-  return legacy ? legacy.label : sanitizeString(key);
-};
-
-export const normalizeMetalRatesList = (rates = [], legacyPrices = {}) => {
+export const normalizeMetalRatesList = (rates = []) => {
   const normalized = new Map();
 
   const pushRate = (name, data = {}) => {
@@ -136,23 +124,9 @@ export const normalizeMetalRatesList = (rates = [], legacyPrices = {}) => {
 
   ensureArray(rates).forEach((rate) => {
     if (!rate) return;
-    const candidateName = rate.name ?? rate.metalName ?? rate.label ?? legacyLabelFromKey(rate.key);
+    const candidateName = rate.name ?? rate.metalName ?? rate.label ?? rate.key;
     pushRate(candidateName, rate);
   });
-
-  if (legacyPrices && typeof legacyPrices === 'object') {
-    LEGACY_METALS.forEach((legacy) => {
-      const price = parseNumber(legacyPrices[legacy.key]);
-      if (!Number.isFinite(price) || price <= 0) return;
-      const normalizedKey = normalizeMetalKey(legacy.label);
-      if (normalized.has(normalizedKey)) return;
-      pushRate(legacy.label, {
-        unitPriceValue: price,
-        unitPriceCurrency: 'BRL',
-        legacyKey: legacy.key
-      });
-    });
-  }
 
   return Array.from(normalized.values());
 };
@@ -183,32 +157,13 @@ export const convertToBRL = (value, currency, currencyRates = DEFAULT_CURRENCY_R
   return normalizeMetalValue(numeric);
 };
 
-const legacyMetalContentToComposition = (legacyContent = {}) => {
-  if (!legacyContent || typeof legacyContent !== 'object') return [];
-  const items = [];
-  LEGACY_METALS.forEach((legacy) => {
-    const quantity = parseNumber(legacyContent[legacy.key]);
-    if (!Number.isFinite(quantity) || quantity <= 0) return;
-    items.push({
-      metalName: legacy.label,
-      quantityKg: normalizeMetalValue(quantity),
-      useGlobalPrice: true
-    });
-  });
-  return items;
-};
-
 export const normalizeCompositionPayload = (composition = [], options = {}) => {
   const {
     metalRatesMap = new Map(),
-    currencyRates = DEFAULT_CURRENCY_RATES,
-    legacyMetalContent = null
+    currencyRates = DEFAULT_CURRENCY_RATES
   } = options;
 
-  let sourceItems = ensureArray(composition);
-  if (sourceItems.length === 0 && legacyMetalContent) {
-    sourceItems = legacyMetalContentToComposition(legacyMetalContent);
-  }
+  const sourceItems = ensureArray(composition);
 
   const items = [];
   let totalWeight = 0;
@@ -271,13 +226,6 @@ export const normalizeCompositionPayload = (composition = [], options = {}) => {
     totalMetalValueBRL: roundMoney(totalValue)
   };
 
-  if ((summary.totalWeightKg === 0 || !Number.isFinite(summary.totalWeightKg)) && legacyMetalContent) {
-    const legacyWeight = normalizeMetalValue(legacyMetalContent.totalWeight);
-    if (legacyWeight > 0) {
-      summary.totalWeightKg = legacyWeight;
-    }
-  }
-
   return { items, summary };
 };
 
@@ -303,16 +251,14 @@ export const normalizeSettings = (settings = {}) => {
 
 export const computeProductPricing = ({
   composition = [],
-  settings = {},
-  legacyMetalContent = null
+  settings = {}
 } = {}) => {
   const normalizedSettings = settings && settings.metalRatesMap instanceof Map
     ? settings
     : normalizeSettings(settings);
   const { items, summary } = normalizeCompositionPayload(composition, {
     metalRatesMap: normalizedSettings.metalRatesMap,
-    currencyRates: normalizedSettings.currencyRates,
-    legacyMetalContent
+    currencyRates: normalizedSettings.currencyRates
   });
 
   const compositionForStorage = items.map(({ normalizedKey, ...rest }) => rest);
@@ -327,14 +273,10 @@ export const computeProductPricing = ({
   };
 };
 
-export const hasAnyMetalQuantity = (composition = [], legacyMetalContent = null) => {
+export const hasAnyMetalQuantity = (composition = []) => {
   if (Array.isArray(composition)) {
     const hasQuantity = composition.some((item) => normalizeMetalValue(item?.quantityKg ?? item?.quantity ?? 0) > 0);
     if (hasQuantity) return true;
-  }
-
-  if (legacyMetalContent && typeof legacyMetalContent === 'object') {
-    return LEGACY_METALS.some((legacy) => normalizeMetalValue(legacyMetalContent[legacy.key]) > 0);
   }
 
   return false;

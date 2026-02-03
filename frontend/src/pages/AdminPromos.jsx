@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
 import { promosAPI, uploadAPI } from '../api';
 import { PlusCircle, Trash2, Save, Image as ImageIcon, Link as LinkIcon, Hash } from 'lucide-react';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 export default function AdminPromos() {
   const [items, setItems] = useState([]);
-  const [form, setForm] = useState({ title: '', subtitle: '', linkUrl: '', order: 0, active: true, imageUrl: '' });
+  const [tab, setTab] = useState('desktop'); // 'desktop' or 'mobile'
+  const [form, setForm] = useState({ title: '', subtitle: '', linkUrl: '', order: 0, active: true, imageUrl: '', imageDesktopUrl: '', imageDesktopUrls: [], imageMobileUrl: '' });
   const [uploading, setUploading] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, targetId: null, loading: false });
 
   const load = async () => {
     const { data } = await promosAPI.getAll();
@@ -14,24 +17,62 @@ export default function AdminPromos() {
 
   useEffect(() => { load(); }, []);
 
+  // onFile supports 'desktop' or 'mobile' target via data-target on the input
   const onFile = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const target = e.target.dataset?.target || 'desktop';
     setUploading(true);
     try {
+      // handle multiple desktop files (batch upload)
+      if (target === 'desktop' && files.length > 1) {
+        const uploaded = [];
+        for (let i = 0; i < files.length; i++) {
+          const fd = new FormData();
+          fd.append('image', files[i]);
+          const { data } = await uploadAPI.uploadImage(fd);
+          uploaded.push(data.url);
+        }
+        setForm((f) => ({ ...f, imageDesktopUrls: [...(f.imageDesktopUrls || []), ...uploaded] }));
+        return;
+      }
+
+      // single file handling
+      const file = files[0];
       const fd = new FormData();
       fd.append('image', file);
       const { data } = await uploadAPI.uploadImage(fd);
-      setForm((f) => ({ ...f, imageUrl: data.url }));
+      const url = data.url;
+      if (target === 'mobile') setForm((f) => ({ ...f, imageMobileUrl: url }));
+      else if (target === 'desktop') setForm((f) => ({ ...f, imageDesktopUrl: url, imageDesktopUrls: [...(f.imageDesktopUrls||[]), url] }));
+      else setForm((f) => ({ ...f, imageUrl: url }));
     } finally {
       setUploading(false);
     }
   };
 
   const create = async () => {
-    if (!form.imageUrl) return alert('Envie uma imagem');
-    await promosAPI.create({ ...form, order: Number(form.order) || 0, active: Boolean(form.active) });
-    setForm({ title: '', subtitle: '', linkUrl: '', order: 0, active: true, imageUrl: '' });
+    // require at least one image (desktop or mobile or legacy imageUrl)
+    const hasDesktopMultiple = Array.isArray(form.imageDesktopUrls) && form.imageDesktopUrls.length > 0;
+    const hasDesktopSingle = !!form.imageDesktopUrl;
+    const hasMobile = !!form.imageMobileUrl;
+    const hasLegacy = !!form.imageUrl;
+    if (!hasDesktopMultiple && !hasDesktopSingle && !hasMobile && !hasLegacy) return alert('Envie ao menos uma imagem (desktop ou mobile)');
+
+    const common = { title: form.title, subtitle: form.subtitle, linkUrl: form.linkUrl, order: Number(form.order) || 0, active: Boolean(form.active) };
+
+    if (hasDesktopMultiple) {
+      // create one promo per desktop image
+      await Promise.all(form.imageDesktopUrls.map((url) => promosAPI.create({ ...common, imageDesktopUrl: url })));
+    } else if (hasDesktopSingle) {
+      await promosAPI.create({ ...common, imageDesktopUrl: form.imageDesktopUrl });
+    } else if (hasMobile) {
+      await promosAPI.create({ ...common, imageMobileUrl: form.imageMobileUrl });
+    } else {
+      await promosAPI.create({ ...common, imageUrl: form.imageUrl });
+    }
+
+    setForm({ title: '', subtitle: '', linkUrl: '', order: 0, active: true, imageUrl: '', imageDesktopUrl: '', imageDesktopUrls: [], imageMobileUrl: '' });
     await load();
   };
 
@@ -40,10 +81,26 @@ export default function AdminPromos() {
     await load();
   };
 
-  const remove = async (id) => {
-    if (!confirm('Remover banner?')) return;
-    await promosAPI.remove(id);
-    await load();
+  const requestRemove = (id) => {
+    setConfirmDialog({ open: true, targetId: id, loading: false });
+  };
+
+  const cancelRemove = () => {
+    if (confirmDialog.loading) return;
+    setConfirmDialog({ open: false, targetId: null, loading: false });
+  };
+
+  const confirmRemove = async () => {
+    if (!confirmDialog.targetId) return cancelRemove();
+    setConfirmDialog((prev) => ({ ...prev, loading: true }));
+    try {
+      await promosAPI.remove(confirmDialog.targetId);
+      await load();
+      setConfirmDialog({ open: false, targetId: null, loading: false });
+    } catch (error) {
+      console.error('Erro ao remover banner:', error);
+      setConfirmDialog((prev) => ({ ...prev, loading: false }));
+    }
   };
 
   return (
@@ -52,15 +109,61 @@ export default function AdminPromos() {
 
       <div className="card mb-8">
         <h2 className="text-xl font-semibold mb-4">Novo Banner</h2>
+
+        {/* Tabs: Desktop / Mobile */}
+        <div className="mb-4">
+          <div className="inline-flex rounded-lg bg-gray-100 p-1">
+            <button
+              className={`px-4 py-2 rounded-md font-medium ${tab === 'desktop' ? 'bg-white shadow' : 'text-gray-600'}`}
+              onClick={() => setTab('desktop')}
+            >
+              PC
+            </button>
+            <button
+              className={`ml-1 px-4 py-2 rounded-md font-medium ${tab === 'mobile' ? 'bg-white shadow' : 'text-gray-600'}`}
+              onClick={() => setTab('mobile')}
+            >
+              Mobile
+            </button>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="label">Imagem</label>
-            <div className="flex items-center gap-3">
-              <input type="file" accept="image/*" onChange={onFile} />
-              {uploading && <span className="text-gray-500">Enviando...</span>}
-            </div>
-            {form.imageUrl && (
-              <img src={form.imageUrl} alt="preview" className="mt-3 w-full h-40 object-cover rounded" />
+            {tab === 'desktop' && (
+              <>
+                <label className="label">Imagem (Desktop)</label>
+                <div className="flex items-center gap-3">
+                  <input data-target="desktop" type="file" accept="image/*" onChange={onFile} multiple />
+                  {uploading && <span className="text-gray-500">Enviando...</span>}
+                </div>
+                {/* previews for uploaded desktop images (array) */}
+                {Array.isArray(form.imageDesktopUrls) && form.imageDesktopUrls.length > 0 && (
+                  <div className="mt-3 flex gap-2 flex-wrap">
+                    {form.imageDesktopUrls.map((u, i) => (
+                      <div key={i} className="relative">
+                        <img src={u} alt={`preview-${i}`} className="w-40 h-24 object-cover rounded" />
+                        <button type="button" className="absolute top-1 right-1 bg-white rounded-full p-1 text-red-600" onClick={()=>{
+                          setForm(f=>({ ...f, imageDesktopUrls: f.imageDesktopUrls.filter((x,idx)=>idx!==i) }));
+                        }}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+
+            {tab === 'mobile' && (
+              <>
+                <label className="label">Imagem (Mobile)</label>
+                <div className="flex items-center gap-3">
+                  <input data-target="mobile" type="file" accept="image/*" onChange={onFile} />
+                  {uploading && <span className="text-gray-500">Enviando...</span>}
+                </div>
+                {form.imageMobileUrl && (
+                  <img src={form.imageMobileUrl} alt="preview-mobile" className="mt-3 w-full h-24 object-cover rounded" />
+                )}
+              </>
             )}
           </div>
           <div className="space-y-3">
@@ -94,7 +197,42 @@ export default function AdminPromos() {
         <div className="space-y-4">
           {items.map((b) => (
             <div key={b._id} className="flex flex-col md:flex-row gap-4 p-4 border rounded-xl">
-              <img src={b.imageUrl} alt={b.title} className="w-full md:w-64 h-32 object-cover rounded" />
+              <div className="w-full md:w-64">
+                {tab === 'desktop' && (
+                  <div>
+                    <label className="label text-sm">Desktop</label>
+                    <img src={b.imageDesktopUrl || b.imageUrl} alt={b.title} className="w-full h-24 md:h-32 object-cover rounded" />
+                    <div className="mt-2">
+                      <input data-target="desktop" type="file" accept="image/*" onChange={async (e)=>{
+                        const file = e.target.files?.[0]; if(!file) return; setUploading(true);
+                        try{
+                          const fd=new FormData(); fd.append('image', file); fd.append('target', 'desktop');
+                          const { data } = await promosAPI.uploadImage(b._id, fd);
+                          // backend returns updated banner; reload list
+                          await load();
+                        } finally{ setUploading(false); }
+                      }} />
+                    </div>
+                  </div>
+                )}
+
+                {tab === 'mobile' && (
+                  <div>
+                    <label className="label text-sm">Mobile</label>
+                    <img src={b.imageMobileUrl || b.imageUrl} alt={b.title} className="w-full h-24 md:h-32 object-cover rounded" />
+                    <div className="mt-2">
+                      <input data-target="mobile" type="file" accept="image/*" onChange={async (e)=>{
+                        const file = e.target.files?.[0]; if(!file) return; setUploading(true);
+                        try{
+                          const fd=new FormData(); fd.append('image', file); fd.append('target', 'mobile');
+                          const { data } = await promosAPI.uploadImage(b._id, fd);
+                          await load();
+                        } finally{ setUploading(false); }
+                      }} />
+                    </div>
+                  </div>
+                )}
+              </div>
               <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3">
                 <input className="input" defaultValue={b.title} placeholder="Título" onBlur={(e)=>save(b._id,{ title:e.target.value })} />
                 <input className="input" defaultValue={b.subtitle} placeholder="Subtítulo" onBlur={(e)=>save(b._id,{ subtitle:e.target.value })} />
@@ -109,7 +247,7 @@ export default function AdminPromos() {
                 <button className="btn-outline flex items-center gap-2" onClick={()=>save(b._id,{})}>
                   <Save className="w-4 h-4" />Salvar
                 </button>
-                <button className="text-red-600 flex items-center gap-2" onClick={()=>remove(b._id)}>
+                <button className="text-red-600 flex items-center gap-2" onClick={()=>requestRemove(b._id)}>
                   <Trash2 className="w-4 h-4" /> Remover
                 </button>
               </div>
@@ -118,6 +256,18 @@ export default function AdminPromos() {
           {items.length === 0 && <p className="text-gray-500">Nenhum banner cadastrado.</p>}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title="Remover banner"
+        message="Remover este banner da vitrine? Essa ação não pode ser desfeita."
+        confirmLabel={confirmDialog.loading ? 'Removendo...' : 'Sim, remover'}
+        cancelLabel="Cancelar"
+        variant="danger"
+        loading={confirmDialog.loading}
+        onConfirm={confirmRemove}
+        onCancel={cancelRemove}
+      />
     </div>
   );
 }

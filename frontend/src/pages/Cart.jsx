@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ordersAPI } from '../api';
 import { ShoppingCart, Trash2, Plus, Minus, ArrowRight } from 'lucide-react';
 import Toast from '../components/Toast';
+import TopSearchBar from '../components/TopSearchBar';
+import MobileMenuDrawer from '../components/MobileMenuDrawer';
 
 export default function Cart() {
   const navigate = useNavigate();
@@ -10,6 +12,8 @@ export default function Cart() {
   const [loading, setLoading] = useState(false);
   const [orderNote, setOrderNote] = useState('');
   const [toast, setToast] = useState({ type: '', message: '' });
+  const [searchText, setSearchText] = useState('');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     loadCart();
@@ -89,6 +93,21 @@ export default function Cart() {
 
   if (cart.length === 0) {
     return (
+      <>
+      <div className="relative">
+        <TopSearchBar withLogo hideSearch value={searchText} onChange={setSearchText} onSubmit={() => {}} />
+        <button
+          type="button"
+          onClick={() => setIsMobileMenuOpen(true)}
+          className="md:hidden absolute right-3 top-1/2 -translate-y-1/2 z-[60] w-12 h-12 rounded-md border border-white/50 flex flex-col items-center justify-center gap-1 bg-white/10"
+          aria-label="Menu"
+        >
+          <span className="w-6 h-[2px] bg-white rounded-full"></span>
+          <span className="w-6 h-[2px] bg-white rounded-full"></span>
+          <span className="w-6 h-[2px] bg-white rounded-full"></span>
+        </button>
+      </div>
+      <MobileMenuDrawer open={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
       <div className="container-page">
         <div className="text-center py-20">
           <ShoppingCart className="w-20 h-20 text-gray-300 mx-auto mb-4" />
@@ -103,13 +122,28 @@ export default function Cart() {
           </Link>
         </div>
       </div>
+      </>
     );
   }
 
   return (
     <>
+    <div className="relative">
+      <TopSearchBar withLogo hideSearch value={searchText} onChange={setSearchText} onSubmit={() => {}} />
+      <button
+        type="button"
+        onClick={() => setIsMobileMenuOpen(true)}
+        className="md:hidden absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-md border border-white/50 flex flex-col items-center justify-center gap-1 bg-white/10"
+        aria-label="Menu"
+      >
+        <span className="w-6 h-[2px] bg-white rounded-full"></span>
+        <span className="w-6 h-[2px] bg-white rounded-full"></span>
+        <span className="w-6 h-[2px] bg-white rounded-full"></span>
+      </button>
+    </div>
+    <MobileMenuDrawer open={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
     <div className="container-page">
-      {/* Mobile Header - estilo sacola */}
+      {/* Mobile Header - estilo carrinho */}
       <div className="md:hidden sticky top-0 z-30 -mx-4 px-4">
         <div className="bg-ebenezer-green text-white rounded-b-2xl shadow flex items-center justify-between px-4 py-3">
           <button
@@ -118,7 +152,7 @@ export default function Cart() {
           >
             Voltar
           </button>
-          <span className="font-semibold">Sacola ({cart.reduce((sum, i) => sum + i.quantity, 0)})</span>
+          <span className="font-semibold">Carrinho ({cart.reduce((sum, i) => sum + i.quantity, 0)})</span>
           <div className="w-6" />
         </div>
       </div>
@@ -290,6 +324,6 @@ export default function Cart() {
         onClose={() => setToast({ type: '', message: '' })}
       />
     )}
-    </>
+  </>
   );
 }

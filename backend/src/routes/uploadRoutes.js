@@ -1,6 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import * as uploadController from '../controllers/uploadController.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
@@ -11,7 +12,10 @@ const __dirname = path.dirname(__filename);
 const router = express.Router();
 
 // Configurar multer
-const uploadsDir = path.join(__dirname, '../../uploads');
+const uploadsDir = process.env.UPLOAD_DIR
+  ? path.resolve(process.env.UPLOAD_DIR)
+  : path.join(__dirname, '../../uploads');
+fs.mkdirSync(uploadsDir, { recursive: true });
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, uploadsDir);

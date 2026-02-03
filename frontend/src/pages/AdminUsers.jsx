@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { usersAPI, authAPI } from '../api';
+import { usersAPI, authAPI, partnerLevelsAPI } from '../api';
 import { Users, Edit, Trash2, X, Save, Plus, Mail, Building, Phone, ArrowLeft } from 'lucide-react';
 import FeedbackDialog from '../components/FeedbackDialog';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -18,9 +18,13 @@ export default function AdminUsers() {
     company: '',
     phone: '',
     role: 'partner',
+    partnerLevel: ''
   });
   const [feedback, setFeedback] = useState({ open: false, type: 'info', title: '', message: '', autoClose: 3000 });
   const [confirmDeletion, setConfirmDeletion] = useState({ open: false, userId: null, userName: '', loading: false });
+  const [levels, setLevels] = useState([]);
+  const [levelsLoading, setLevelsLoading] = useState(false);
+  const [newLevel, setNewLevel] = useState({ name: '', percentage: '' });
   // Determinar se usuário logado é admin para habilitar edição de role
   const reqUserIsAdmin = () => {
     try {
@@ -37,6 +41,7 @@ export default function AdminUsers() {
 
   useEffect(() => {
     fetchUsers();
+    fetchLevels();
   }, []);
 
   const showFeedback = ({ type = 'info', title = '', message = '', autoClose }) => {
@@ -55,6 +60,19 @@ export default function AdminUsers() {
       setUsers([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchLevels = async () => {
+    setLevelsLoading(true);
+    try {
+      const response = await partnerLevelsAPI.list();
+      setLevels(response.data || []);
+    } catch (error) {
+      console.error('Erro ao buscar níveis:', error?.response?.data || error?.message || error);
+      setLevels([]);
+    } finally {
+      setLevelsLoading(false);
     }
   };
 
@@ -86,6 +104,7 @@ export default function AdminUsers() {
         company: user.company || '',
         phone: user.phone || '',
         role: user.role || 'partner',
+        partnerLevel: user.partnerLevel?._id || ''
       });
     } else {
       setEditingUser(null);
@@ -96,6 +115,7 @@ export default function AdminUsers() {
         company: '',
         phone: '',
         role: 'partner',
+        partnerLevel: ''
       });
     }
     setShowModal(true);
@@ -116,7 +136,8 @@ export default function AdminUsers() {
         if (!updateData.password) {
           delete updateData.password;
         }
-        await usersAPI.update(editingUser._id, updateData);
+        const payload = { ...updateData, partnerLevel: updateData.partnerLevel || null };
+        await usersAPI.update(editingUser._id, payload);
         showFeedback({ type: 'success', title: 'Usuário atualizado', message: 'As informações foram salvas com sucesso.' });
       } else {
         // Ao criar, senha é obrigatória
@@ -126,6 +147,7 @@ export default function AdminUsers() {
         }
         await authAPI.register({
           ...formData,
+          partnerLevel: formData.partnerLevel || null,
           role: formData.role === 'admin' ? 'admin' : 'partner',
         });
         showFeedback({ type: 'success', title: 'Usuário criado', message: 'O novo usuário foi cadastrado com sucesso.' });
@@ -264,6 +286,7 @@ export default function AdminUsers() {
                 <th>Empresa</th>
                 <th>Telefone</th>
                 <th>Tipo</th>
+                <th>Nível</th>
                 <th>Data de Cadastro</th>
                 <th>Ações</th>
               </tr>
@@ -276,6 +299,9 @@ export default function AdminUsers() {
                   <td>{user.company || '-'}</td>
                   <td>{user.phone || '-'}</td>
                   <td>{user.role === 'admin' ? 'Admin' : 'Parceiro'}</td>
+                  <td className="whitespace-nowrap">
+                    {user.partnerLevel?.name ? `${user.partnerLevel.name} (+${user.partnerLevel.percentage}%)` : 'Padrão'}
+                  </td>
                   <td className="whitespace-nowrap">
                     {new Date(user.createdAt).toLocaleDateString('pt-BR')}
                   </td>
@@ -411,6 +437,75 @@ export default function AdminUsers() {
                         />
                         Admin
                       </label>
+                    </div>
+                  </div>
+                )}
+
+                {formData.role === 'partner' && (
+                  <div>
+                    <label className="label">Nível do parceiro</label>
+                    <div className="flex flex-col gap-2">
+                      <select
+                        className="input"
+                        value={formData.partnerLevel}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, partnerLevel: e.target.value }))}
+                        disabled={levelsLoading}
+                      >
+                        <option value="">Padrão (usa nível default)</option>
+                        {levels.map((level) => (
+                          <option key={level._id} value={level._id}>
+                            {level.name} — +{level.percentage}%
+                          </option>
+                        ))}
+                      </select>
+                      <div className="flex flex-col gap-2 rounded-lg border border-dashed border-gray-300 p-3 bg-gray-50">
+                        <span className="text-sm font-semibold text-gray-700">Criar novo nível</span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <input
+                            type="text"
+                            className="input"
+                            placeholder="Nome do nível"
+                            value={newLevel.name}
+                            onChange={(e) => setNewLevel((prev) => ({ ...prev, name: e.target.value }))}
+                          />
+                          <input
+                            type="number"
+                            className="input"
+                            placeholder="Markup (%)"
+                            value={newLevel.percentage}
+                            onChange={(e) => setNewLevel((prev) => ({ ...prev, percentage: e.target.value }))}
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!newLevel.name || !newLevel.percentage) return;
+                              try {
+                                const payload = { name: newLevel.name, percentage: Number(newLevel.percentage) };
+                                const response = await partnerLevelsAPI.create(payload);
+                                setNewLevel({ name: '', percentage: '' });
+                                await fetchLevels();
+                                setFormData((prev) => ({ ...prev, partnerLevel: response.data?._id || prev.partnerLevel }));
+                                showFeedback({ type: 'success', title: 'Nível criado', message: 'Novo nível adicionado com sucesso.' });
+                              } catch (err) {
+                                const message = err?.response?.data?.message || 'Não foi possível criar o nível.';
+                                showFeedback({ type: 'error', title: 'Erro ao criar nível', message });
+                              }
+                            }}
+                            className="btn-outline text-sm px-4 py-2"
+                          >
+                            Salvar nível
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNewLevel({ name: '', percentage: '' })}
+                            className="text-sm text-gray-600 hover:text-gray-800"
+                          >
+                            Limpar
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}

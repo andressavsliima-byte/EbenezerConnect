@@ -87,6 +87,19 @@ npm run dev
 
 A aplicação estará disponível em `http://localhost:3000`
 
+## 🌐 Deploy na Vercel
+
+1. Conecte o repositório à Vercel (o arquivo `vercel.json` já está configurado para monorepo: frontend estático e API Express em função serverless).
+2. Em *Project Settings → Environment Variables*, configure pelo menos:
+  - `MONGODB_URI` (use MongoDB Atlas ou outro cluster acessível pela internet)
+  - `JWT_SECRET`
+  - `NODE_ENV=production`
+  - `UPLOAD_DIR=/tmp/uploads` (ephemeral; para persistir imagens use um bucket externo e adapte os uploads)
+  - `MAX_UPLOAD_SIZE` (opcional, em bytes)
+  - `FORMULA_WORKBOOK_PATH` (opcional, caminho absoluto para a planilha se precisar sobrescrever a padrão)
+3. Deploy: basta clicar em *Deploy*; o build roda `npm run build` no `frontend` e publica o handler da API em `/api`.
+4. Observação sobre uploads: o filesystem da Vercel é temporário. Para persistência real, direcione os uploads para S3/Cloudflare R2 ou similar; `UPLOAD_DIR=/tmp/uploads` serve apenas para testes/artefatos temporários.
+
 ## 📚 Estrutura do Projeto
 
 ```

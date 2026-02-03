@@ -29,11 +29,6 @@ const productSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
-  stock: {
-    type: Number,
-    required: false,
-    default: 0
-  },
   category: {
     type: String,
     required: false,
@@ -51,12 +46,10 @@ const productSchema = new mongoose.Schema({
     totalMetalValueBRL: { type: Number, default: 0 },
     totalWeightKg: { type: Number, default: 0 }
   },
-  // Campo legado mantido para migração automática.
-  metalContent: {
-    totalWeight: { type: Number, default: 0 },
-    platinum: { type: Number, default: 0 },
-    palladium: { type: Number, default: 0 },
-    rhodium: { type: Number, default: 0 }
+  internalMetals: {
+    platina: { type: Number, default: 0 },
+    paladio: { type: Number, default: 0 },
+    rodio: { type: Number, default: 0 }
   },
   purchasePanelStyle: {
     type: String,

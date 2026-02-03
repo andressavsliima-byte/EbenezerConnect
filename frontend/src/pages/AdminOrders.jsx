@@ -9,8 +9,10 @@ import {
   X,
   AlertCircle,
   Trash2,
-  RotateCcw
+  RotateCcw,
+  ArrowLeft
 } from 'lucide-react';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 export default function AdminOrders() {
   const [orders, setOrders] = useState([]);
@@ -23,6 +25,17 @@ export default function AdminOrders() {
   const [toast, setToast] = useState({ type: '', message: '' });
   const [showTrashModal, setShowTrashModal] = useState(false);
   const [trash, setTrash] = useState([]);
+  const confirmDefaults = {
+    open: false,
+    title: '',
+    message: '',
+    confirmLabel: 'Confirmar',
+    variant: 'danger',
+    loading: false,
+    action: null,
+    order: null,
+  };
+  const [confirmDialog, setConfirmDialog] = useState(() => ({ ...confirmDefaults }));
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -97,16 +110,57 @@ export default function AdminOrders() {
     navigate({ pathname: location.pathname, search: params.toString() }, { replace: true });
   };
 
-  const handleMoveToTrash = async (order) => {
-    if (!confirm('Mover este pedido para a lixeira?')) return;
-    try {
-      await ordersAPI.moveToTrash(order._id);
-      setToast({ type: 'success', message: 'Pedido movido para a lixeira.' });
-      fetchOrders();
-      if (showTrashModal) fetchTrash();
-    } catch (e) {
-      setToast({ type: 'error', message: e?.response?.data?.message || 'Erro ao mover para lixeira.' });
+  const openConfirmDialog = (config) => {
+    setConfirmDialog({ ...confirmDefaults, ...config, open: true, loading: false });
+  };
+
+  const closeConfirmDialog = () => {
+    if (confirmDialog.loading) return;
+    setConfirmDialog({ ...confirmDefaults });
+  };
+
+  const handleGoBack = () => {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      navigate(-1);
+      return;
     }
+    navigate('/admin');
+  };
+
+  const handleConfirmDialog = async () => {
+    if (!confirmDialog.action || !confirmDialog.order) return closeConfirmDialog();
+    setConfirmDialog((prev) => ({ ...prev, loading: true }));
+    try {
+      if (confirmDialog.action === 'trash') {
+        await ordersAPI.moveToTrash(confirmDialog.order._id);
+        setToast({ type: 'success', message: 'Pedido movido para a lixeira.' });
+        fetchOrders();
+        if (showTrashModal) fetchTrash();
+      }
+
+      if (confirmDialog.action === 'hardDelete') {
+        await ordersAPI.hardDelete(confirmDialog.order._id);
+        setToast({ type: 'success', message: 'Pedido excluído definitivamente.' });
+        fetchTrash();
+      }
+
+      setConfirmDialog({ ...confirmDefaults });
+    } catch (e) {
+      setToast({ type: 'error', message: e?.response?.data?.message || 'Erro ao processar ação.' });
+      setConfirmDialog((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
+  const handleMoveToTrash = (order) => {
+    if (!order) return;
+    openConfirmDialog({
+      title: 'Mover para a lixeira',
+      message: `Mover o pedido #${order._id.slice(-8).toUpperCase()} para a lixeira?\nEle ficará acessível na Lixeira até exclusão definitiva.`,
+      confirmLabel: 'Mover para lixeira',
+      variant: 'warning',
+      action: 'trash',
+      order,
+    });
   };
 
   const handleRestore = async (order) => {
@@ -120,15 +174,16 @@ export default function AdminOrders() {
     }
   };
 
-  const handleHardDelete = async (order) => {
-    if (!confirm('Excluir definitivamente este pedido? Esta ação não pode ser desfeita.')) return;
-    try {
-      await ordersAPI.hardDelete(order._id);
-      setToast({ type: 'success', message: 'Pedido excluído definitivamente.' });
-      fetchTrash();
-    } catch (e) {
-      setToast({ type: 'error', message: e?.response?.data?.message || 'Erro ao excluir definitivamente.' });
-    }
+  const handleHardDelete = (order) => {
+    if (!order) return;
+    openConfirmDialog({
+      title: 'Excluir pedido',
+      message: `Excluir permanentemente o pedido #${order._id.slice(-8).toUpperCase()}?\nEsta ação não pode ser desfeita.`,
+      confirmLabel: 'Excluir definitivamente',
+      variant: 'danger',
+      action: 'hardDelete',
+      order,
+    });
   };
 
   const getStatusClass = (status) => {
@@ -179,9 +234,19 @@ export default function AdminOrders() {
         </div>
       )}
       <div className="mb-6 flex items-center justify-between gap-4">
-        <h1 className="text-4xl font-bold text-gray-900">
-          Gerenciar Pedidos
-        </h1>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleGoBack}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-300 text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
+            aria-label="Voltar para a tela anterior"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <h1 className="text-4xl font-bold text-gray-900">
+            Gerenciar Pedidos
+          </h1>
+        </div>
         <button
           onClick={openTrashModal}
           className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
@@ -570,6 +635,17 @@ export default function AdminOrders() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmLabel={confirmDialog.confirmLabel}
+        variant={confirmDialog.variant}
+        loading={confirmDialog.loading}
+        onConfirm={handleConfirmDialog}
+        onCancel={closeConfirmDialog}
+      />
     </div>
   );
 }

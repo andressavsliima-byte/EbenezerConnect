@@ -11,6 +11,7 @@ docker compose up -d mongodb
 export MONGODB_URI="mongodb://admin:admin123@localhost:27017/ebenezer-connect?authSource=admin"
 export PORT=5000
 export JWT_SECRET="sua_chave_secreta_muito_segura_aqui"
+export VITE_PORT=3000
 
 echo "[dev] Garantindo admin ativo..."
 npm --prefix backend run ensure:admin || true
@@ -25,6 +26,6 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-echo "[dev] Iniciando frontend (Vite) na porta 3001..."
+echo "[dev] Iniciando frontend (Vite) na porta $VITE_PORT..."
 cd "$ROOT_DIR/frontend"
 npm run dev

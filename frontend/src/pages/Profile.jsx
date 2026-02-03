@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { authAPI, ordersAPI, uploadAPI } from '../api';
-import { User, Mail, Building, Phone, Save, AlertCircle, CheckCircle, ShoppingBag, Calendar, Image as ImageIcon, Eye } from 'lucide-react';
+import { authAPI, ordersAPI } from '../api';
+import { User, Mail, Building, Phone, Save, AlertCircle, CheckCircle, ShoppingBag, Calendar, Eye } from 'lucide-react';
+import TopSearchBar from '../components/TopSearchBar';
+import MobileMenuDrawer from '../components/MobileMenuDrawer';
 
 export default function Profile() {
   const [user, setUser] = useState(null);
@@ -10,9 +12,51 @@ export default function Profile() {
   const [message, setMessage] = useState({ type: '', text: '' });
   const [showAvatarMenu, setShowAvatarMenu] = useState(false);
   const [showAvatarModal, setShowAvatarModal] = useState(false);
-  const fileInputRef = useRef(null);
   const avatarRef = useRef(null);
-  const [avatarPreview, setAvatarPreview] = useState('');
+  const [searchText, setSearchText] = useState('');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isSessionWarned, setIsSessionWarned] = useState(false);
+  
+  // Gera uma cor a partir de uma string para manter consistência por usuário
+  const colors = ['#F87171','#FB923C','#F59E0B','#FACC15','#84CC16','#10B981','#14B8A6','#06B6D4','#60A5FA','#6366F1','#A78BFA','#F472B6'];
+  const getColorFromString = (str = '') => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = str.charCodeAt(i) + ((hash << 5) - hash);
+      hash = hash & hash;
+    }
+    const idx = Math.abs(hash) % colors.length;
+    return colors[idx];
+  };
+  const getInitials = (name = '') => {
+    const parts = (name || '').trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return '';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  };
+  const formatDate = (v) => {
+    if (!v) return '-';
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return String(v);
+    return d.toLocaleDateString('pt-BR');
+  };
+  const formatPhone = (phone = '') => {
+    const digits = (phone || '').toString().replace(/\D/g, '');
+    if (!digits) return '';
+    if (digits.length <= 2) return `(${digits}`;
+    const ddd = digits.slice(0, 2);
+    const rest = digits.slice(2);
+    if (rest.length <= 4) return `(${ddd}) ${rest}`;
+    // decide split: if rest length <=8 use 4-4, else use 5-4
+    if (rest.length <= 8) {
+      const first = rest.slice(0, 4);
+      const second = rest.slice(4);
+      return `(${ddd}) ${first}${second ? '-' + second : ''}`;
+    }
+    const first = rest.slice(0, 5);
+    const second = rest.slice(5);
+    return `(${ddd}) ${first}${second ? '-' + second : ''}`;
+  };
 
   useEffect(() => {
     const onKey = (e) => {
@@ -21,6 +65,15 @@ export default function Profile() {
     if (showAvatarModal) window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [showAvatarModal]);
+
+  // Limpa a mensagem de sucesso após 5 segundos
+  useEffect(() => {
+    if (message.type === 'success' && message.text) {
+      const t = setTimeout(() => setMessage({ type: '', text: '' }), 5000);
+      return () => clearTimeout(t);
+    }
+    return undefined;
+  }, [message]);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -29,6 +82,30 @@ export default function Profile() {
     phone: '',
     avatarUrl: ''
   });
+
+  const isAdmin = user?.role === 'admin';
+  const isPartnerLocked = user && user.role !== 'admin';
+
+  // Prefill from localStorage to evitar tela vazia
+  useEffect(() => {
+    const cached = localStorage.getItem('user');
+    if (cached) {
+      try {
+        const u = JSON.parse(cached);
+        setUser(u);
+        setFormData({
+          name: u.name || '',
+          email: u.email || '',
+          company: u.company || '',
+          phone: formatPhone(u.phone || ''),
+          avatarUrl: u.avatarUrl || '',
+        });
+        setLoading(false);
+      } catch (e) {
+        // ignore parse errors
+      }
+    }
+  }, []);
 
   useEffect(() => {
     fetchProfile();
@@ -43,7 +120,7 @@ export default function Profile() {
         name: response.data.name,
         email: response.data.email,
         company: response.data.company || '',
-        phone: response.data.phone || '',
+        phone: formatPhone(response.data.phone || ''),
         avatarUrl: response.data.avatarUrl || ''
       });
       // Carregar pedidos do usuário (tudo que comprou)
@@ -51,26 +128,46 @@ export default function Profile() {
       setOrders(ordersResp.data);
     } catch (error) {
       console.error('Erro ao buscar perfil:', error);
-      setMessage({ type: 'error', text: 'Erro ao carregar perfil.' });
+      const is401 = error?.response?.status === 401;
+      const fallback = localStorage.getItem('user');
+      if (is401 && fallback && !isSessionWarned) {
+        setIsSessionWarned(true);
+        setMessage({ type: 'error', text: 'Sessão expirada. Refaça o login para atualizar seus dados.' });
+      } else {
+        setMessage({ type: 'error', text: 'Erro ao carregar perfil.' });
+      }
     } finally {
       setLoading(false);
     }
   };
 
   const handleChange = (e) => {
+    const { name, value } = e.target;
+    if (name === 'phone') {
+      // normalize digits then format
+      const digits = value.replace(/\D/g, '');
+      setFormData({ ...formData, phone: formatPhone(digits) });
+      return;
+    }
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value,
+      [name]: value,
     });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!isAdmin) {
+      setMessage({ type: 'error', text: 'Somente administradores podem editar este perfil.' });
+      return;
+    }
     setSaving(true);
     setMessage({ type: '', text: '' });
 
     try {
-      const response = await authAPI.updateProfile(formData);
+      // enviar telefone sem máscara
+      const payload = { ...formData, phone: (formData.phone || '').toString().replace(/\D/g, '') };
+      const response = await authAPI.updateProfile(payload);
       
       // Atualizar localStorage
       const userData = JSON.parse(localStorage.getItem('user'));
@@ -78,6 +175,8 @@ export default function Profile() {
       localStorage.setItem('user', JSON.stringify(updatedUser));
       
       setUser(updatedUser);
+      // garantir que o formulário mostre o telefone formatado
+      setFormData(prev => ({ ...prev, phone: formatPhone(response.data.phone || prev.phone) }));
       setMessage({ type: 'success', text: 'Perfil atualizado com sucesso!' });
     } catch (error) {
       console.error('Erro ao atualizar perfil:', error);
@@ -91,35 +190,8 @@ export default function Profile() {
   };
 
   const handleAvatarChange = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      // Mostrar preview local imediato
-      const localUrl = URL.createObjectURL(file);
-      setAvatarPreview(localUrl);
-
-      const fd = new FormData();
-      fd.append('image', file);
-      const res = await uploadAPI.uploadImage(fd) // fallback if avatar route blocked
-        .catch(async () => uploadAPI.uploadImage(fd));
-      const url = res.data?.url || res.data?.imageUrl;
-      if (url) {
-        // Normalizar URL caso venha relativa
-        const normalized = /^https?:\/\//.test(url) ? url : (url.startsWith('/') ? url : `/${url}`);
-        setFormData(prev => ({ ...prev, avatarUrl: normalized }));
-        setMessage({ type: 'success', text: 'Foto enviada. Clique em Salvar para aplicar.' });
-        // Limpar preview local se já temos URL do servidor
-        URL.revokeObjectURL(localUrl);
-        setAvatarPreview('');
-      } else {
-        // Não exibir mensagens vermelhas; manter silencioso
-        setMessage({ type: '', text: '' });
-      }
-    } catch (error) {
-      console.error('Erro ao enviar avatar:', error);
-      // Não exibir mensagens vermelhas
-      setMessage({ type: '', text: '' });
-    }
+    // Upload de avatar removido — função mantida apenas para compatibilidade caso chamada por acidente
+    return;
   };
 
   const handleAvatarClick = () => {
@@ -133,10 +205,8 @@ export default function Profile() {
   };
 
   const handleChangeAvatar = () => {
+    // upload removido
     setShowAvatarMenu(false);
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
-    }
   };
 
   if (loading) {
@@ -150,7 +220,22 @@ export default function Profile() {
   }
 
   return (
-    <div className="container-page max-w-4xl">
+    <>
+      <div className="relative">
+        <TopSearchBar withLogo hideSearch value={searchText} onChange={setSearchText} onSubmit={() => {}} />
+        <button
+          type="button"
+          onClick={() => setIsMobileMenuOpen(true)}
+          className="md:hidden absolute right-3 top-1/2 -translate-y-1/2 z-[60] w-12 h-12 rounded-md border border-white/50 flex flex-col items-center justify-center gap-1 bg-white/10"
+          aria-label="Menu"
+        >
+          <span className="w-6 h-[2px] bg-white rounded-full"></span>
+          <span className="w-6 h-[2px] bg-white rounded-full"></span>
+          <span className="w-6 h-[2px] bg-white rounded-full"></span>
+        </button>
+      </div>
+      <MobileMenuDrawer open={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
+      <div className="container-page max-w-4xl">
       <h1 className="text-4xl font-bold text-gray-900 mb-8">
         Meu Perfil
       </h1>
@@ -166,37 +251,13 @@ export default function Profile() {
         {/* Informações do Usuário */}
         <div className="lg:col-span-1">
           <div className="card text-center">
-            <div ref={avatarRef} className="relative w-28 h-28 rounded-md mx-auto mb-2 border bg-white cursor-pointer" onClick={handleAvatarClick} title="Opções de foto">
-              {formData.avatarUrl ? (
-                <img src={avatarPreview || formData.avatarUrl} alt="Avatar" className="w-full h-full object-contain" />
-              ) : (
-                <div className="w-full h-full bg-ebenezer-green flex items-center justify-center">
-                  <User className="w-12 h-12 text-white" />
-                </div>
-              )}
-              {/* Indicador discreto opcional */}
-              <div className="absolute bottom-1 right-1 bg-white/90 rounded-full p-1 shadow pointer-events-none">
-                <ImageIcon className="w-4 h-4 text-gray-700" />
+            <div ref={avatarRef} className="relative w-28 h-28 rounded-md mx-auto mb-2 border cursor-pointer" onClick={handleAvatarClick} title="Avatar">
+              <div className="w-full h-full flex items-center justify-center" style={{ background: getColorFromString(formData.email || formData.name), borderRadius: '0.5rem' }}>
+                <span className="text-white font-bold text-2xl">{getInitials(formData.name || user?.name || '')}</span>
               </div>
-              {/* Menu de opções: visualizar ou trocar */}
-              {showAvatarMenu && (
-                <div className="absolute -bottom-1 right-10 bg-white border rounded-md shadow-lg text-sm z-10">
-                  <button type="button" className="px-3 py-2 hover:bg-gray-100 flex items-center gap-2" onClick={handleViewAvatar}>
-                    <Eye className="w-4 h-4" /> Visualizar foto
-                  </button>
-                  <button type="button" className="px-3 py-2 hover:bg-gray-100 flex items-center gap-2" onClick={handleChangeAvatar}>
-                    <ImageIcon className="w-4 h-4" /> Trocar foto
-                  </button>
-                </div>
-              )}
-              <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleAvatarChange} />
-              {/* Modal movido para fora do container do avatar para evitar corte */
-              }
+              
             </div>
-            {/* Texto visível fora do avatar para leitura pelo parceiro */}
-            <div className="text-xs text-gray-600 text-center mb-4">
-              Toque na imagem para abrir em janelinha e ler o conteúdo.
-            </div>
+            {/* espaço reservado removido (mensagem explicativa eliminada) */}
             <h2 className="text-xl font-bold text-gray-900 mb-1">
               {user?.name}
             </h2>
@@ -208,10 +269,10 @@ export default function Profile() {
                   <Building className="w-4 h-4" />
                   <span>{user?.company || 'Não informado'}</span>
                 </div>
-                {user?.phone && (
+                { (formData.phone || user?.phone) && (
                   <div className="flex items-center justify-center gap-2 text-gray-700">
                     <Phone className="w-4 h-4" />
-                    <span>{user.phone}</span>
+                    <span>{formData.phone || formatPhone(user.phone)}</span>
                   </div>
                 )}
               </div>
@@ -229,7 +290,7 @@ export default function Profile() {
         <div className="lg:col-span-2">
           <div className="card">
             <h3 className="text-2xl font-bold text-gray-900 mb-6">
-              Editar Informações
+              {isAdmin ? 'Editar Informações' : 'Informações do Perfil'}
             </h3>
 
             <form onSubmit={handleSubmit} className="space-y-6">
@@ -243,9 +304,11 @@ export default function Profile() {
                   name="name"
                   type="text"
                   required
-                  className="input"
+                  className={`input ${isPartnerLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                   value={formData.name}
                   onChange={handleChange}
+                  disabled={isPartnerLocked}
+                  readOnly={isPartnerLocked}
                 />
               </div>
 
@@ -259,9 +322,11 @@ export default function Profile() {
                   name="email"
                   type="email"
                   required
-                  className="input"
+                  className={`input ${isPartnerLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                   value={formData.email}
                   onChange={handleChange}
+                  disabled={isPartnerLocked}
+                  readOnly={isPartnerLocked}
                 />
               </div>
 
@@ -274,9 +339,11 @@ export default function Profile() {
                   id="company"
                   name="company"
                   type="text"
-                  className="input"
+                  className={`input ${isPartnerLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                   value={formData.company}
                   onChange={handleChange}
+                  disabled={isPartnerLocked}
+                  readOnly={isPartnerLocked}
                 />
               </div>
 
@@ -293,26 +360,29 @@ export default function Profile() {
                   placeholder="(11) 99999-9999"
                   value={formData.phone}
                   onChange={handleChange}
+                  disabled={isPartnerLocked}
+                  readOnly={isPartnerLocked}
                 />
               </div>
-
-              <button
-                type="submit"
-                className={`w-full ${saving ? 'btn-disabled' : 'btn-primary'} flex items-center justify-center gap-2`}
-                disabled={saving}
-              >
-                {saving ? (
-                  <>
-                    <div className="spinner w-5 h-5"></div>
-                    Salvando...
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-5 h-5" />
-                    Salvar Alterações
-                  </>
-                )}
-              </button>
+              {!isPartnerLocked && (
+                <button
+                  type="submit"
+                  className={`w-full ${saving ? 'btn-disabled' : 'btn-primary'} flex items-center justify-center gap-2`}
+                  disabled={saving}
+                >
+                  {saving ? (
+                    <>
+                      <div className="spinner w-5 h-5"></div>
+                      Salvando...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-5 h-5" />
+                      Salvar Alterações
+                    </>
+                  )}
+                </button>
+              )}
             </form>
           </div>
 
@@ -331,13 +401,13 @@ export default function Profile() {
               <div className="flex justify-between border-b border-gray-200 pb-2">
                 <span className="text-gray-600">Membro desde:</span>
                 <span className="font-semibold">
-                  {new Date(user?.createdAt).toLocaleDateString('pt-BR')}
+                  {formatDate(user?.createdAt)}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Última atualização:</span>
                 <span className="font-semibold">
-                  {new Date(user?.updatedAt).toLocaleDateString('pt-BR')}
+                  {formatDate(user?.updatedAt)}
                 </span>
               </div>
             </div>
@@ -365,7 +435,7 @@ export default function Profile() {
                       <span className="font-semibold text-ebenezer-green">R$ {order.totalAmount.toFixed(2)}</span>
                     </div>
                     <div className="text-xs flex justify-between text-gray-500">
-                      <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {new Date(order.createdAt).toLocaleDateString('pt-BR')} {new Date(order.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                      <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {formatDate(order.createdAt)} {(() => { const d = new Date(order.createdAt); return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); })()}</span>
                       <span>{order.items.reduce((sum, it) => sum + it.quantity, 0)} item(s)</span>
                     </div>
                   </div>
@@ -382,17 +452,14 @@ export default function Profile() {
           <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
             <div className="bg-white border rounded-md shadow-2xl w-[300px] p-3 relative">
               <button type="button" aria-label="Fechar" className="absolute top-2 right-2 text-gray-500 hover:text-gray-700" onClick={() => setShowAvatarModal(false)}>×</button>
-              {formData.avatarUrl || avatarPreview ? (
-                <img src={avatarPreview || formData.avatarUrl} alt="Avatar" className="w-full h-auto rounded" />
-              ) : (
-                <div className="w-full h-36 bg-gray-100 rounded flex items-center justify-center">
-                  <User className="w-10 h-10 text-gray-400" />
-                </div>
-              )}
+              <div className="w-full h-36 rounded flex items-center justify-center" style={{ background: getColorFromString(formData.email || formData.name) }}>
+                <span className="text-white font-bold text-4xl">{getInitials(formData.name || user?.name || '')}</span>
+              </div>
             </div>
           </div>
         </div>
       )}
     </div>
+    </>
   );
 }

@@ -1,17 +1,49 @@
 import Order from '../models/Order.js';
 import Message from '../models/Message.js';
 import User from '../models/User.js';
+import Product from '../models/Product.js';
+
+const computePriceForUser = (basePrice, userContext) => {
+  const sanitizedBase = Number.isFinite(basePrice) ? basePrice : 0;
+  if (!userContext || userContext.role !== 'partner') return sanitizedBase;
+  const levelPct = userContext.partnerLevel?.percentage ?? userContext.partnerPercentage ?? 0;
+  const pct = Number.isFinite(levelPct) ? Math.max(0, Math.min(500, levelPct)) : 0;
+  return Math.round((sanitizedBase * (1 + pct / 100) + Number.EPSILON) * 100) / 100;
+};
 
 export const createOrder = async (req, res) => {
   try {
     const { items, notes } = req.body;
     const userId = req.user.userId;
 
-    const totalAmount = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: 'Nenhum item informado' });
+    }
+
+    const productIds = items
+      .map((it) => it.product || it.productId || it._id)
+      .filter(Boolean);
+    const products = await Product.find({ _id: { $in: productIds } });
+
+    const itemsWithPrice = items.map((item) => {
+      const productDoc = products.find((p) => p._id.toString() === (item.product || item.productId || item._id)?.toString());
+      const basePrice = productDoc?.price ?? item.price ?? 0;
+      const computedPrice = computePriceForUser(basePrice, req.user);
+      return {
+        productId: productDoc?._id || item.productId || item.product,
+        quantity: Number(item.quantity) || 1,
+        price: computedPrice,
+        name: item.name || productDoc?.name,
+        brand: item.brand || productDoc?.brand,
+        sku: item.sku || productDoc?.sku
+      };
+    });
+
+    const totalAmount = itemsWithPrice.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
     const order = new Order({
       userId,
-      items,
+      items: itemsWithPrice,
       totalAmount,
       notes
     });

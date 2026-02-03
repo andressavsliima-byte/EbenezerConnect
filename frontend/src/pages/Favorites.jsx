@@ -3,9 +3,13 @@ import { Heart, Package } from 'lucide-react';
 import { getPrimaryProductImage } from '../utils/productUtils';
 import { getFavorites, toggleFavorite } from '../utils/favorites';
 import { Link } from 'react-router-dom';
+import TopSearchBar from '../components/TopSearchBar';
+import MobileMenuDrawer from '../components/MobileMenuDrawer';
 
 export default function Favorites() {
   const [favorites, setFavorites] = useState(getFavorites());
+  const [searchText, setSearchText] = useState('');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     const fav = JSON.parse(localStorage.getItem('favorites') || '[]');
@@ -16,7 +20,22 @@ export default function Favorites() {
   }, []);
 
   return (
-    <div className="container-page">
+    <>
+      <div className="relative">
+        <TopSearchBar withLogo hideSearch value={searchText} onChange={setSearchText} onSubmit={() => {}} />
+        <button
+          type="button"
+          onClick={() => setIsMobileMenuOpen(true)}
+          className="md:hidden absolute right-3 top-1/2 -translate-y-1/2 z-[60] w-12 h-12 rounded-md border border-white/50 flex flex-col items-center justify-center gap-1 bg-white/10"
+          aria-label="Menu"
+        >
+          <span className="w-6 h-[2px] bg-white rounded-full"></span>
+          <span className="w-6 h-[2px] bg-white rounded-full"></span>
+          <span className="w-6 h-[2px] bg-white rounded-full"></span>
+        </button>
+      </div>
+      <MobileMenuDrawer open={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
+      <div className="container-page">
       <h1 className="text-4xl font-bold text-gray-900 mb-8 flex items-center gap-3">
         <Heart className="w-8 h-8 text-rose-500" />
         Favoritos
@@ -47,7 +66,7 @@ export default function Favorites() {
 
               <Link to={`/produto/${item._id}`} className="block">
                 <div className="p-4">
-                  <div className="w-full h-40 bg-gray-100 rounded mb-3 overflow-hidden">
+                  <div className="w-full h-40 bg-white rounded mb-3 overflow-hidden">
                     <img
                       src={getPrimaryProductImage(item)}
                       alt={item.name}
@@ -69,6 +88,7 @@ export default function Favorites() {
           ))}
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }

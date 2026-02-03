@@ -1,11 +1,15 @@
 import { useState, useEffect } from 'react';
 import { ordersAPI } from '../api';
 import { Package, Clock, CheckCircle, XCircle, Calendar, DollarSign, AlertCircle, X } from 'lucide-react';
+import TopSearchBar from '../components/TopSearchBar';
+import MobileMenuDrawer from '../components/MobileMenuDrawer';
 
 export default function Orders() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [searchText, setSearchText] = useState('');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   // Removido toast de erro em pedidos
 
   useEffect(() => {
@@ -41,7 +45,7 @@ export default function Orders() {
   const getStatusText = (status) => {
     switch (status) {
       case 'pending':
-        return 'Pendente';
+        return 'Pendente (aguardando confirmação)';
       case 'confirmed':
         return 'Confirmado';
       case 'rejected':
@@ -75,13 +79,29 @@ export default function Orders() {
   }
 
   // Aggregates (confirmed orders considered as "gasto")
-  const confirmedOrders = orders.filter(o => o.status === 'confirmed');
+  const visibleOrders = orders.filter((o) => o.status !== 'rejected');
+  const confirmedOrders = visibleOrders.filter(o => o.status === 'confirmed');
   const totalItemsConfirmed = confirmedOrders.reduce((sum, o) => sum + o.items.reduce((s, i) => s + i.quantity, 0), 0);
   const totalSpentConfirmed = confirmedOrders.reduce((sum, o) => sum + o.totalAmount, 0);
-  const totalOrders = orders.length;
+  const totalOrders = visibleOrders.length;
 
   return (
-    <div className="container-page">
+    <>
+      <div className="relative">
+        <TopSearchBar withLogo hideSearch value={searchText} onChange={setSearchText} onSubmit={() => {}} />
+        <button
+          type="button"
+          onClick={() => setIsMobileMenuOpen(true)}
+          className="md:hidden absolute right-3 top-1/2 -translate-y-1/2 z-[60] w-12 h-12 rounded-md border border-white/50 flex flex-col items-center justify-center gap-1 bg-white/10"
+          aria-label="Menu"
+        >
+          <span className="w-6 h-[2px] bg-white rounded-full"></span>
+          <span className="w-6 h-[2px] bg-white rounded-full"></span>
+          <span className="w-6 h-[2px] bg-white rounded-full"></span>
+        </button>
+      </div>
+      <MobileMenuDrawer open={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)} />
+      <div className="container-page">
       {/* Toast removido conforme solicitação: não exibir mensagem de erro em pedidos */}
       <h1 className="text-4xl font-bold text-gray-900 mb-8">
         Meus Pedidos
@@ -89,7 +109,7 @@ export default function Orders() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2">
-        {orders.length === 0 ? (
+        {visibleOrders.length === 0 ? (
           <div className="text-center py-20">
             <Package className="w-20 h-20 text-gray-300 mx-auto mb-4" />
             <h2 className="text-2xl font-bold text-gray-900 mb-2">
@@ -101,7 +121,7 @@ export default function Orders() {
           </div>
         ) : (
           <div className="space-y-6">
-          {orders.map((order) => (
+          {visibleOrders.map((order) => (
             <div key={order._id} className="card">
               {/* Header do Pedido */}
               <div className="flex flex-col md:flex-row md:items-center justify-between mb-4 pb-4 border-b border-gray-200">
@@ -237,5 +257,6 @@ export default function Orders() {
         </div>
       </div>
     </div>
+    </>
   );
 }
