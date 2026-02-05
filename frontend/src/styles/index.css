@@ -16,41 +16,24 @@
 }
 
 /* Fundo global branco para todo o site. */
-:root {
-  --site-bg: #dce6b0;
-  --site-bg-mobile: #ffffff;
-}
+
 
 html, body, #root,
 #root > div,
 .container-page, .container {
-  background-color: var(--site-bg) !important;
+  background-color: #ffffff !important;
   background-image: none !important;
   min-height: 100% !important;
 }
 
-@media (max-width: 1023px) {
-  html, body, #root,
-  #root > div,
-  .container-page, .container {
-    background-color: var(--site-bg-mobile) !important;
-  }
-}
+
 
 html, body, #root {
   background-color: var(--site-bg) !important;
   min-height: 100% !important;
 }
 
-/* Desktop recebe o tom verde claro solicitado; mobile continua branco. */
-@media (min-width: 1024px) {
-  html, body, #root,
-  #root > div,
-  .container-page, .container {
-    background-color: #dce6b0 !important;
-    background-image: none !important;
-  }
-}
+
 
 #root, #root > div,
 .container-page, .container {
