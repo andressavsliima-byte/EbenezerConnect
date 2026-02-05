@@ -551,8 +551,8 @@ html, body, #root {
 
 /* Sidebar custom background to match requested color (dark bluish-gray) */
 .app-sidebar {
-  /* Sidebar background changed to beige tone per request */
-  background-color: #d8e29c !important;
+  /* Sidebar background agora branco */
+  background-color: #ffffff !important;
 }
 
 .app-sidebar nav a {
