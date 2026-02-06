@@ -1,39 +1,25 @@
 import express from 'express';
 import upload from '../middleware/upload.js';
+import * as uploadController from '../controllers/uploadController.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Upload de imagem de produto (admin)
+// Upload de imagem (admin)
 router.post(
   '/upload',
   authenticate,
   adminOnly,
   upload.single('image'),
-  (req, res) => {
-    res.json({
-      url: req.file.path,        // URL pública Cloudinary
-      public_id: req.file.filename
-    });
-  }
+  uploadController.uploadImage
 );
 
-// Upload de avatar (qualquer usuário autenticado)
+// Upload de avatar (usuário logado)
 router.post(
   '/upload/avatar',
   authenticate,
   upload.single('image'),
-  (req, res) => {
-    res.json({
-      url: req.file.path,
-      public_id: req.file.filename
-    });
-  }
+  uploadController.uploadImage
 );
 
-// ❌ DELETE LOCAL NÃO EXISTE MAIS
-// Cloudinary exige API própria para delete
-// (implementamos depois se quiser)
-
 export default router;
-
