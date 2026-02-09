@@ -112,6 +112,7 @@ const buildSpecsObject = (specList) => {
   });
   return specsObject;
 };
+
 export default function AdminProducts() {
   const navigate = useNavigate();
   const [products, setProducts] = useState([]);
@@ -170,7 +171,6 @@ export default function AdminProducts() {
       setProducts(response.data);
     } catch (error) {
       console.error('Erro ao buscar produtos:', error?.response?.data || error?.message || error);
-      // Não exibir alerta modal; apenas mostrar estado vazio de forma silenciosa.
       setProducts([]);
     } finally {
       setLoading(false);
@@ -232,12 +232,6 @@ export default function AdminProducts() {
     }
   };
 
-  // Removido fetch de configuração de metais
-  // Removido cálculo automático de preço por metais
-
-  // Removido gerenciamento de configuração de metais
-
-  // Removido botão de recalcular preços por metais
   const handleChange = (e) => {
     setFormData({
       ...formData,
@@ -255,10 +249,11 @@ export default function AdminProducts() {
     }));
   };
 
-  // Removidos manipuladores de linhas de metais
-
-  // Removidos manipuladores de configuração de metais
-
+  /**
+   * ✅ Upload CORRETO para Cloudinary:
+   * - Salva a URL COMPLETA retornada do backend
+   * - NÃO converte para pathname, senão a Vercel tenta buscar local e dá 404
+   */
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -273,10 +268,12 @@ export default function AdminProducts() {
       // NÃO converta para pathname, senão o frontend tenta carregar na Vercel e dá 404.
       const imageUrl = response.data?.imageUrl || response.data?.url || '';
       if (!imageUrl) throw new Error('Upload não retornou URL');
+
       setFormData((prev) => ({
         ...prev,
         images: [...(prev.images || []), imageUrl]
       }));
+
       setUploadMessage('Imagem enviada com sucesso');
       setTimeout(() => setUploadMessage(''), 3000);
     } catch (error) {
@@ -324,21 +321,21 @@ export default function AdminProducts() {
       return next;
     });
   };
+
   const openModal = (product = null) => {
     if (product) {
       setEditingProduct(product);
       const specifications = product.specifications || {};
-      const entries = specifications && typeof specifications === 'object'
-        ? Object.entries(specifications)
-        : specifications instanceof Map
-          ? Array.from(specifications.entries())
-          : [];
+      const entries =
+        specifications && typeof specifications === 'object'
+          ? Object.entries(specifications)
+          : specifications instanceof Map
+            ? Array.from(specifications.entries())
+            : [];
       const additionalSpecs = entries
         .filter(([key]) => !LEGACY_SPEC_KEYS.includes(String(key || '').toLowerCase()))
         .map(([key, value]) => ({ key, value: String(value ?? '') }));
       setSpecList(additionalSpecs);
-
-      // Removida importação dos metais no formulário
 
       setFormData({
         name: product.name ?? '',
@@ -386,15 +383,12 @@ export default function AdminProducts() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Removido bloco de composição de metais e cálculo automático
-
     try {
       const specsObject = buildSpecsObject(specList);
       const payload = {
         name: formData.name,
         description: formData.description,
         brand: formData.brand,
-        // Preço agora é informado manualmente
         price: parseDecimalInput(formData.price),
         category: formData.category,
         sku: formData.sku,
@@ -405,8 +399,7 @@ export default function AdminProducts() {
           platina: parseDecimalInput(formData.internalMetals.platina),
           paladio: parseDecimalInput(formData.internalMetals.paladio),
           rodio: parseDecimalInput(formData.internalMetals.rodio)
-        },
-        // metalComposition removido do cadastro
+        }
       };
 
       if (editingProduct) {
@@ -421,7 +414,9 @@ export default function AdminProducts() {
       fetchProducts();
     } catch (error) {
       console.error('Erro ao salvar produto:', error);
-      const backendMsg = (error && error.response && error.response.data && (error.response.data.error || error.response.data.message)) || '';
+      const backendMsg =
+        (error && error.response && error.response.data && (error.response.data.error || error.response.data.message)) ||
+        '';
       const message = backendMsg || (error instanceof Error ? error.message : 'Erro ao salvar produto. Tente novamente.');
       setToast({ type: 'error', message });
       setTimeout(() => setToast({ type: '', message: '' }), 3500);
@@ -451,6 +446,7 @@ export default function AdminProducts() {
       setToast({ type: 'error', message: 'Erro ao excluir produto. Tente novamente.' });
     }
   };
+
   if (loading) {
     return (
       <div className="container-page">
@@ -460,8 +456,6 @@ export default function AdminProducts() {
       </div>
     );
   }
-
-  // Removidos displays de preço/peso por metais
 
   const handleGoBack = () => {
     if (typeof window !== 'undefined' && window.history.length > 1) {
@@ -473,11 +467,7 @@ export default function AdminProducts() {
 
   return (
     <div className="container-page">
-      <Toast
-        type={toast.type || 'info'}
-        message={toast.message}
-        onClose={() => setToast({ type: '', message: '' })}
-      />
+      <Toast type={toast.type || 'info'} message={toast.message} onClose={() => setToast({ type: '', message: '' })} />
 
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-8">
         <div className="flex items-center gap-3">
@@ -489,9 +479,7 @@ export default function AdminProducts() {
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <h1 className="text-4xl font-bold text-gray-900">
-            Gerenciar Produtos
-          </h1>
+          <h1 className="text-4xl font-bold text-gray-900">Gerenciar Produtos</h1>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 w-full md:w-auto">
           <button
@@ -503,6 +491,7 @@ export default function AdminProducts() {
             <Download className="w-5 h-5" />
             {downloadingSheet ? 'Gerando...' : 'Baixar planilha'}
           </button>
+
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={importingSheet}
@@ -512,6 +501,7 @@ export default function AdminProducts() {
             <FileSpreadsheet className="w-5 h-5" />
             {importingSheet ? 'Importando...' : 'Importar preços'}
           </button>
+
           <input
             ref={fileInputRef}
             type="file"
@@ -519,6 +509,7 @@ export default function AdminProducts() {
             className="hidden"
             onChange={handleImportSheet}
           />
+
           <button onClick={() => openModal()} className="btn-primary flex items-center justify-center gap-2 w-full">
             <Plus className="w-5 h-5" />
             Novo Produto
@@ -547,11 +538,7 @@ export default function AdminProducts() {
                 <td>{p.category || '—'}</td>
                 <td>
                   <div className="flex gap-2">
-                    <button
-                      onClick={() => openModal(p)}
-                      className="text-blue-500 hover:text-blue-700"
-                      title="Editar"
-                    >
+                    <button onClick={() => openModal(p)} className="text-blue-500 hover:text-blue-700" title="Editar">
                       <Edit className="w-5 h-5" />
                     </button>
                     <button
@@ -582,6 +569,7 @@ export default function AdminProducts() {
                   <X className="w-6 h-6" />
                 </button>
               </div>
+
               <form onSubmit={handleSubmit} className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -602,13 +590,26 @@ export default function AdminProducts() {
                   </div>
                   <div>
                     <label className="label">Preço (R$)</label>
-                    <input name="price" value={formData.price} onChange={handleChange} className="input" placeholder="Ex.: 210,00" />
+                    <input
+                      name="price"
+                      value={formData.price}
+                      onChange={handleChange}
+                      className="input"
+                      placeholder="Ex.: 210,00"
+                    />
                   </div>
                 </div>
+
                 <div>
                   <label className="label">Descrição</label>
-                  <textarea name="description" value={formData.description} onChange={handleChange} className="input min-h-[120px] resize-y" />
+                  <textarea
+                    name="description"
+                    value={formData.description}
+                    onChange={handleChange}
+                    className="input min-h-[120px] resize-y"
+                  />
                 </div>
+
                 {/* Metais internos (visível apenas no painel admin) */}
                 <div className="space-y-3 mt-4">
                   <div className="flex items-center justify-between">
@@ -645,6 +646,7 @@ export default function AdminProducts() {
                     </div>
                   </div>
                 </div>
+
                 {/* Upload de Imagens */}
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
@@ -656,26 +658,36 @@ export default function AdminProducts() {
                       </label>
                     </div>
                   </div>
-                  {uploadMessage && (
-                    <div className="text-sm text-gray-600">{uploadMessage}</div>
-                  )}
+
+                  {uploadMessage && <div className="text-sm text-gray-600">{uploadMessage}</div>}
+
                   {Array.isArray(formData.images) && formData.images.length > 0 ? (
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                       {formData.images.map((img, index) => (
-                          <div key={`${img}-${index}`} className="border rounded-lg p-2 bg-white flex flex-col">
-                            <div className="relative h-28 sm:h-32 bg-white rounded-md overflow-hidden flex items-center justify-center">
+                        <div key={`${img}-${index}`} className="border rounded-lg p-2 bg-white flex flex-col">
+                          <div className="relative h-28 sm:h-32 bg-white rounded-md overflow-hidden flex items-center justify-center">
                             <img
                               src={img}
                               alt={`Imagem ${index + 1}`}
                               className="max-h-full max-w-full object-contain"
-                              onError={(e) => { e.currentTarget.src = '/images/placeholder.svg'; }}
+                              onError={(e) => {
+                                e.currentTarget.src = '/images/placeholder.svg';
+                              }}
                             />
                           </div>
                           <div className="flex justify-between items-center mt-2">
-                            <button type="button" className="text-emerald-600 text-sm hover:text-emerald-700" onClick={() => setAsCover(index)}>
+                            <button
+                              type="button"
+                              className="text-emerald-600 text-sm hover:text-emerald-700"
+                              onClick={() => setAsCover(index)}
+                            >
                               Definir capa
                             </button>
-                            <button type="button" className="text-red-600 text-sm hover:text-red-700" onClick={() => removeImage(index)}>
+                            <button
+                              type="button"
+                              className="text-red-600 text-sm hover:text-red-700"
+                              onClick={() => removeImage(index)}
+                            >
                               Remover
                             </button>
                           </div>
@@ -686,6 +698,7 @@ export default function AdminProducts() {
                     <p className="text-sm text-gray-500">Nenhuma imagem enviada ainda.</p>
                   )}
                 </div>
+
                 {/* Ficha Técnica */}
                 <div className="space-y-3 mt-4">
                   <h3 className="font-semibold text-gray-900">Ficha Técnica</h3>
@@ -719,9 +732,11 @@ export default function AdminProducts() {
                     </div>
                   </div>
                 </div>
-                {/* Seção de metais removida conforme solicitado */}
+
                 <div className="flex gap-4 justify-end pt-4">
-                  <button type="button" onClick={closeModal} className="btn-outline">Cancelar</button>
+                  <button type="button" onClick={closeModal} className="btn-outline">
+                    Cancelar
+                  </button>
                   <button type="submit" className="btn-primary flex items-center gap-2">
                     <Save className="w-5 h-5" /> Salvar
                   </button>
@@ -743,7 +758,6 @@ export default function AdminProducts() {
         onConfirm={confirmDeleteProduct}
         onCancel={cancelDeleteProduct}
       />
-
     </div>
   );
 }
