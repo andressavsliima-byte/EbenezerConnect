@@ -8,10 +8,14 @@ import {
   Trash2,
   X,
   Save,
+  Upload,
+  AlertCircle,
   ArrowLeft,
+  RefreshCcw,
   Download,
   FileSpreadsheet
 } from 'lucide-react';
+import { getPrimaryProductImage } from '../utils/productUtils';
 import ConfirmDialog from '../components/ConfirmDialog';
 import Toast from '../components/Toast';
 
@@ -19,50 +23,21 @@ import Toast from '../components/Toast';
 const LEGACY_SPEC_KEYS = ['platina', 'paládio', 'paladio', 'ródio', 'rodio', 'estoque'];
 const DEFAULT_CURRENCY = 'BRL';
 
-// Base do backend (para suportar imagens antigas salvas como /uploads/...)
-// VITE_API_URL exemplo: https://ebenezerconnect-k7k3.onrender.com/api
-const API_BASE = (import.meta?.env?.VITE_API_URL || '').replace(/\/api\/?$/, '');
-
-// Resolve URLs de imagem para exibição (Cloudinary + legado /uploads)
-const resolveImageUrl = (value) => {
-  if (!value) return '';
-  const url = String(value);
-
-  // URL completa (Cloudinary, etc.)
-  if (/^https?:\/\//i.test(url)) return url;
-
-  // Legado: Cloudinary salvo como pathname (ex: /dmruy8w87/image/upload/...)
-  // Conserta: https://res.cloudinary.com + pathname
-  if (/^\/[a-z0-9_-]+\/image\/upload\//i.test(url)) {
-    return `https://res.cloudinary.com${url}`;
-  }
-
-  // Legado: uploads locais servidos pelo backend
-  if (url.startsWith('/uploads/')) {
-    return API_BASE ? `${API_BASE}${url}` : url;
-  }
-
-  // Outros paths relativos
-  return url.startsWith('/') ? url : `/${url}`;
-};
+const generateId = () => Math.random().toString(36).slice(2, 10);
 
 const parseDecimalInput = (value) => {
   if (value === null || value === undefined) return 0;
   if (typeof value === 'number') return Number.isNaN(value) ? 0 : value;
-
   const trimmed = String(value).trim();
   if (!trimmed) return 0;
-
   const sanitized = trimmed.replace(/\s+/g, '');
   const hasComma = sanitized.includes(',');
   const hasDot = sanitized.includes('.');
-
   if (hasComma && hasDot) {
     const normalized = sanitized.replace(/\./g, '').replace(',', '.');
     const parsed = Number.parseFloat(normalized);
     return Number.isNaN(parsed) ? 0 : parsed;
   }
-
   const normalized = sanitized.replace(',', '.');
   const parsed = Number.parseFloat(normalized);
   return Number.isNaN(parsed) ? 0 : parsed;
@@ -76,7 +51,8 @@ const formatDecimalForInput = (value) => {
     const trimmed = fixed.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
     return trimmed.replace('.', ',');
   }
-  return String(value).trim();
+  const str = String(value).trim();
+  return str;
 };
 
 const roundCurrency = (value) => {
@@ -84,8 +60,15 @@ const roundCurrency = (value) => {
   return Math.round((numeric + Number.EPSILON) * 100) / 100;
 };
 
-const formatCurrencyBRL = (value) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: DEFAULT_CURRENCY }).format(roundCurrency(value));
+const convertToBRL = (value, currency, usdToBrl) => {
+  const numeric = parseDecimalInput(value);
+  if (numeric <= 0) return 0;
+  const usdRate = parseDecimalInput(usdToBrl);
+  if (String(currency).toUpperCase() === 'USD') {
+    return roundCurrency(numeric * (usdRate > 0 ? usdRate : 0));
+  }
+  return roundCurrency(numeric);
+};
 
 const normalizeNameKey = (value) => {
   if (!value) return '';
@@ -97,6 +80,28 @@ const normalizeNameKey = (value) => {
     .trim();
 };
 
+const findMetalRate = (config, name) => {
+  if (!config?.metalRates?.length) return null;
+  const key = normalizeNameKey(name);
+  if (!key) return null;
+  return (
+    config.metalRates.find((rate) => {
+      const rateName = normalizeNameKey(rate.metalName ?? rate.name);
+      if (rateName === key) return true;
+      if (rate.legacyKey && normalizeNameKey(rate.legacyKey) === key) return true;
+      if (Array.isArray(rate.aliases) && rate.aliases.some((alias) => normalizeNameKey(alias) === key)) return true;
+      return false;
+    }) || null
+  );
+};
+
+// Removido cálculo automático por metais
+
+const formatCurrencyBRL = (value) =>
+  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(roundCurrency(value));
+
+// Sem linhas de metais
+
 const buildSpecsObject = (specList) => {
   const specsObject = {};
   (specList || []).forEach((item) => {
@@ -107,27 +112,20 @@ const buildSpecsObject = (specList) => {
   });
   return specsObject;
 };
-
 export default function AdminProducts() {
   const navigate = useNavigate();
-
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-
   const [showModal, setShowModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
-
   const [uploading, setUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState('');
-
   const [toast, setToast] = useState({ type: '', message: '' });
-
   const [confirmDialog, setConfirmDialog] = useState({ open: false, product: null, loading: false });
-
   const [downloadingSheet, setDownloadingSheet] = useState(false);
   const [importingSheet, setImportingSheet] = useState(false);
-
   const fileInputRef = useRef(null);
+  // Removidas configurações e linhas de metais
 
   const [formData, setFormData] = useState({
     name: '',
@@ -172,6 +170,7 @@ export default function AdminProducts() {
       setProducts(response.data);
     } catch (error) {
       console.error('Erro ao buscar produtos:', error?.response?.data || error?.message || error);
+      // Não exibir alerta modal; apenas mostrar estado vazio de forma silenciosa.
       setProducts([]);
     } finally {
       setLoading(false);
@@ -193,7 +192,6 @@ export default function AdminProducts() {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-
       setToast({ type: 'success', message: 'Planilha atualizada pronta para download.' });
     } catch (error) {
       console.error('Erro ao gerar planilha:', error);
@@ -206,13 +204,11 @@ export default function AdminProducts() {
   const handleImportSheet = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
     setImportingSheet(true);
     try {
-      const fd = new FormData();
-      fd.append('file', file);
-
-      const response = await productsAPI.importPriceSheet(fd);
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await productsAPI.importPriceSheet(formData);
       const { updatedCount = 0, notFound = [], skipped = [] } = response.data || {};
 
       const parts = [];
@@ -222,7 +218,6 @@ export default function AdminProducts() {
 
       const message = parts.length ? parts.join(' | ') : 'Importação concluída';
       const hasErrors = notFound.length > 0 || skipped.length > 0;
-
       setToast({ type: hasErrors ? 'error' : 'success', message });
       fetchProducts();
     } catch (error) {
@@ -237,11 +232,17 @@ export default function AdminProducts() {
     }
   };
 
+  // Removido fetch de configuração de metais
+  // Removido cálculo automático de preço por metais
+
+  // Removido gerenciamento de configuração de metais
+
+  // Removido botão de recalcular preços por metais
   const handleChange = (e) => {
-    setFormData((prev) => ({
-      ...prev,
+    setFormData({
+      ...formData,
       [e.target.name]: e.target.value
-    }));
+    });
   };
 
   const handleInternalMetalChange = (key, value) => {
@@ -254,9 +255,12 @@ export default function AdminProducts() {
     }));
   };
 
-  // ✅ Upload correto: guarda URL COMPLETA do Cloudinary (não converte para pathname)
+  // Removidos manipuladores de linhas de metais
+
+  // Removidos manipuladores de configuração de metais
+
   const handleImageUpload = async (e) => {
-    const file = e.target.files?.[0];
+    const file = e.target.files[0];
     if (!file) return;
 
     setUploading(true);
@@ -265,19 +269,14 @@ export default function AdminProducts() {
 
     try {
       const response = await uploadAPI.uploadImage(uploadFormData);
-
-      // Com Cloudinary, use SEMPRE a URL completa https://res.cloudinary.com/...
-      const imageUrl = response?.data?.url || response?.data?.secure_url || response?.data?.imageUrl;
-
-      if (!imageUrl || !/^https?:\/\//i.test(String(imageUrl))) {
-        throw new Error('URL de imagem inválida retornada pelo servidor.');
-      }
-
+      // Cloudinary retorna uma URL completa (https://res.cloudinary.com/...)
+      // NÃO converta para pathname, senão o frontend tenta carregar na Vercel e dá 404.
+      const imageUrl = response.data?.imageUrl || response.data?.url || '';
+      if (!imageUrl) throw new Error('Upload não retornou URL');
       setFormData((prev) => ({
         ...prev,
-        images: [...(prev.images || []), String(imageUrl)]
+        images: [...(prev.images || []), imageUrl]
       }));
-
       setUploadMessage('Imagem enviada com sucesso');
       setTimeout(() => setUploadMessage(''), 3000);
     } catch (error) {
@@ -292,7 +291,7 @@ export default function AdminProducts() {
   const removeImage = (index) => {
     setFormData((prev) => ({
       ...prev,
-      images: (prev.images || []).filter((_, i) => i !== index)
+      images: prev.images.filter((_, i) => i !== index)
     }));
   };
 
@@ -325,30 +324,27 @@ export default function AdminProducts() {
       return next;
     });
   };
-
   const openModal = (product = null) => {
     if (product) {
       setEditingProduct(product);
-
       const specifications = product.specifications || {};
-      const entries =
-        specifications && typeof specifications === 'object'
-          ? Object.entries(specifications)
-          : specifications instanceof Map
-            ? Array.from(specifications.entries())
-            : [];
-
+      const entries = specifications && typeof specifications === 'object'
+        ? Object.entries(specifications)
+        : specifications instanceof Map
+          ? Array.from(specifications.entries())
+          : [];
       const additionalSpecs = entries
         .filter(([key]) => !LEGACY_SPEC_KEYS.includes(String(key || '').toLowerCase()))
         .map(([key, value]) => ({ key, value: String(value ?? '') }));
-
       setSpecList(additionalSpecs);
+
+      // Removida importação dos metais no formulário
 
       setFormData({
         name: product.name ?? '',
         description: product.description ?? '',
         brand: product.brand ?? '',
-        price: product.price ? Number(product.price).toFixed(2) : '',
+        price: product.price ? product.price.toFixed(2) : '',
         category: product.category ?? '',
         sku: product.sku ?? '',
         images: Array.isArray(product.images) && product.images.length > 0 ? product.images : [],
@@ -376,7 +372,6 @@ export default function AdminProducts() {
         internalMetals: { platina: '', paladio: '', rodio: '' }
       });
     }
-
     setNewSpec({ key: '', value: '' });
     setShowModal(true);
   };
@@ -391,13 +386,15 @@ export default function AdminProducts() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    // Removido bloco de composição de metais e cálculo automático
+
     try {
       const specsObject = buildSpecsObject(specList);
-
       const payload = {
         name: formData.name,
         description: formData.description,
         brand: formData.brand,
+        // Preço agora é informado manualmente
         price: parseDecimalInput(formData.price),
         category: formData.category,
         sku: formData.sku,
@@ -408,7 +405,8 @@ export default function AdminProducts() {
           platina: parseDecimalInput(formData.internalMetals.platina),
           paladio: parseDecimalInput(formData.internalMetals.paladio),
           rodio: parseDecimalInput(formData.internalMetals.rodio)
-        }
+        },
+        // metalComposition removido do cadastro
       };
 
       if (editingProduct) {
@@ -423,9 +421,7 @@ export default function AdminProducts() {
       fetchProducts();
     } catch (error) {
       console.error('Erro ao salvar produto:', error);
-      const backendMsg =
-        (error && error.response && error.response.data && (error.response.data.error || error.response.data.message)) ||
-        '';
+      const backendMsg = (error && error.response && error.response.data && (error.response.data.error || error.response.data.message)) || '';
       const message = backendMsg || (error instanceof Error ? error.message : 'Erro ao salvar produto. Tente novamente.');
       setToast({ type: 'error', message });
       setTimeout(() => setToast({ type: '', message: '' }), 3500);
@@ -444,7 +440,6 @@ export default function AdminProducts() {
   const confirmDeleteProduct = async () => {
     if (!confirmDialog.product) return;
     setConfirmDialog((prev) => ({ ...prev, loading: true }));
-
     try {
       await productsAPI.delete(confirmDialog.product._id);
       setConfirmDialog({ open: false, product: null, loading: false });
@@ -456,15 +451,6 @@ export default function AdminProducts() {
       setToast({ type: 'error', message: 'Erro ao excluir produto. Tente novamente.' });
     }
   };
-
-  const handleGoBack = () => {
-    if (typeof window !== 'undefined' && window.history.length > 1) {
-      navigate(-1);
-      return;
-    }
-    navigate('/admin');
-  };
-
   if (loading) {
     return (
       <div className="container-page">
@@ -475,9 +461,23 @@ export default function AdminProducts() {
     );
   }
 
+  // Removidos displays de preço/peso por metais
+
+  const handleGoBack = () => {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      navigate(-1);
+      return;
+    }
+    navigate('/admin');
+  };
+
   return (
     <div className="container-page">
-      <Toast type={toast.type || 'info'} message={toast.message} onClose={() => setToast({ type: '', message: '' })} />
+      <Toast
+        type={toast.type || 'info'}
+        message={toast.message}
+        onClose={() => setToast({ type: '', message: '' })}
+      />
 
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-8">
         <div className="flex items-center gap-3">
@@ -489,9 +489,10 @@ export default function AdminProducts() {
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <h1 className="text-4xl font-bold text-gray-900">Gerenciar Produtos</h1>
+          <h1 className="text-4xl font-bold text-gray-900">
+            Gerenciar Produtos
+          </h1>
         </div>
-
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 w-full md:w-auto">
           <button
             onClick={handleDownloadSheet}
@@ -502,7 +503,6 @@ export default function AdminProducts() {
             <Download className="w-5 h-5" />
             {downloadingSheet ? 'Gerando...' : 'Baixar planilha'}
           </button>
-
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={importingSheet}
@@ -512,7 +512,6 @@ export default function AdminProducts() {
             <FileSpreadsheet className="w-5 h-5" />
             {importingSheet ? 'Importando...' : 'Importar preços'}
           </button>
-
           <input
             ref={fileInputRef}
             type="file"
@@ -520,7 +519,6 @@ export default function AdminProducts() {
             className="hidden"
             onChange={handleImportSheet}
           />
-
           <button onClick={() => openModal()} className="btn-primary flex items-center justify-center gap-2 w-full">
             <Plus className="w-5 h-5" />
             Novo Produto
@@ -549,10 +547,18 @@ export default function AdminProducts() {
                 <td>{p.category || '—'}</td>
                 <td>
                   <div className="flex gap-2">
-                    <button onClick={() => openModal(p)} className="text-blue-500 hover:text-blue-700" title="Editar">
+                    <button
+                      onClick={() => openModal(p)}
+                      className="text-blue-500 hover:text-blue-700"
+                      title="Editar"
+                    >
                       <Edit className="w-5 h-5" />
                     </button>
-                    <button onClick={() => requestDeleteProduct(p)} className="text-red-500 hover:text-red-700" title="Excluir">
+                    <button
+                      onClick={() => requestDeleteProduct(p)}
+                      className="text-red-500 hover:text-red-700"
+                      title="Excluir"
+                    >
                       <Trash2 className="w-5 h-5" />
                     </button>
                   </div>
@@ -563,7 +569,7 @@ export default function AdminProducts() {
         </table>
       </div>
 
-      {/* Modal de Produto */}
+      {/* Modal de Produto Simplificado */}
       {showModal && (
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal max-w-3xl" onClick={(e) => e.stopPropagation()}>
@@ -576,7 +582,6 @@ export default function AdminProducts() {
                   <X className="w-6 h-6" />
                 </button>
               </div>
-
               <form onSubmit={handleSubmit} className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -600,17 +605,10 @@ export default function AdminProducts() {
                     <input name="price" value={formData.price} onChange={handleChange} className="input" placeholder="Ex.: 210,00" />
                   </div>
                 </div>
-
                 <div>
                   <label className="label">Descrição</label>
-                  <textarea
-                    name="description"
-                    value={formData.description}
-                    onChange={handleChange}
-                    className="input min-h-[120px] resize-y"
-                  />
+                  <textarea name="description" value={formData.description} onChange={handleChange} className="input min-h-[120px] resize-y" />
                 </div>
-
                 {/* Metais internos (visível apenas no painel admin) */}
                 <div className="space-y-3 mt-4">
                   <div className="flex items-center justify-between">
@@ -647,7 +645,6 @@ export default function AdminProducts() {
                     </div>
                   </div>
                 </div>
-
                 {/* Upload de Imagens */}
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
@@ -659,22 +656,19 @@ export default function AdminProducts() {
                       </label>
                     </div>
                   </div>
-
-                  {uploadMessage && <div className="text-sm text-gray-600">{uploadMessage}</div>}
-
+                  {uploadMessage && (
+                    <div className="text-sm text-gray-600">{uploadMessage}</div>
+                  )}
                   {Array.isArray(formData.images) && formData.images.length > 0 ? (
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                       {formData.images.map((img, index) => (
-                        <div key={`${img}-${index}`} className="border rounded-lg p-2 bg-white flex flex-col">
-                          <div className="relative h-28 sm:h-32 bg-white rounded-md overflow-hidden flex items-center justify-center">
+                          <div key={`${img}-${index}`} className="border rounded-lg p-2 bg-white flex flex-col">
+                            <div className="relative h-28 sm:h-32 bg-white rounded-md overflow-hidden flex items-center justify-center">
                             <img
-                              src={resolveImageUrl(img)}
+                              src={img}
                               alt={`Imagem ${index + 1}`}
                               className="max-h-full max-w-full object-contain"
-                              loading="lazy"
-                              onError={(e) => {
-                                e.currentTarget.src = '/images/placeholder.svg';
-                              }}
+                              onError={(e) => { e.currentTarget.src = '/images/placeholder.svg'; }}
                             />
                           </div>
                           <div className="flex justify-between items-center mt-2">
@@ -692,7 +686,6 @@ export default function AdminProducts() {
                     <p className="text-sm text-gray-500">Nenhuma imagem enviada ainda.</p>
                   )}
                 </div>
-
                 {/* Ficha Técnica */}
                 <div className="space-y-3 mt-4">
                   <h3 className="font-semibold text-gray-900">Ficha Técnica</h3>
@@ -726,11 +719,9 @@ export default function AdminProducts() {
                     </div>
                   </div>
                 </div>
-
+                {/* Seção de metais removida conforme solicitado */}
                 <div className="flex gap-4 justify-end pt-4">
-                  <button type="button" onClick={closeModal} className="btn-outline">
-                    Cancelar
-                  </button>
+                  <button type="button" onClick={closeModal} className="btn-outline">Cancelar</button>
                   <button type="submit" className="btn-primary flex items-center gap-2">
                     <Save className="w-5 h-5" /> Salvar
                   </button>
@@ -752,6 +743,7 @@ export default function AdminProducts() {
         onConfirm={confirmDeleteProduct}
         onCancel={cancelDeleteProduct}
       />
+
     </div>
   );
 }
