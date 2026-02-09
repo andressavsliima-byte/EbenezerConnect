@@ -22,6 +22,32 @@ import Toast from '../components/Toast';
 // Bloqueia campos legados que não devem mais ser exibidos
 const LEGACY_SPEC_KEYS = ['platina', 'paládio', 'paladio', 'ródio', 'rodio', 'estoque'];
 const DEFAULT_CURRENCY = 'BRL';
+// Base do backend (para suportar imagens antigas salvas como /uploads/...)
+// VITE_API_URL exemplo: https://ebenezerconnect-k7k3.onrender.com/api
+const API_BASE = (import.meta?.env?.VITE_API_URL || '').replace(/\/api\/?$/, '');
+
+// Resolve URLs de imagem para exibição (Cloudinary + legado /uploads)
+const resolveImageUrl = (value) => {
+  if (!value) return '';
+  const url = String(value);
+
+  // URL completa (Cloudinary, etc.)
+  if (/^https?:\/\//i.test(url)) return url;
+
+  // Legado: Cloudinary salvo como pathname (ex: /dmruy8w87/image/upload/...)
+  if (/^\/[a-z0-9_-]+\/image\/upload\//i.test(url)) {
+    return `https://res.cloudinary.com${url}`;
+  }
+
+  // Legado: uploads locais servidos pelo backend
+  if (url.startsWith('/uploads/')) {
+    return API_BASE ? `${API_BASE}${url}` : url;
+  }
+
+  // Outros paths relativos
+  return url.startsWith('/') ? url : `/${url}`;
+};
+
 
 const generateId = () => Math.random().toString(36).slice(2, 10);
 
