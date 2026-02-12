@@ -30,7 +30,7 @@ export default function Orders() {
   }, []);
 
   const fetchOrders = async () => {
-    setLoading(true);
+    setLoading((prev) => (orders.length === 0 ? true : prev));
     try {
       const response = await ordersAPI.getMine();
       const freshOrders = response.data || [];

@@ -1,15 +1,13 @@
 
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, User, Package, Settings, ShoppingCart, Heart, LogOut, ClipboardList } from 'lucide-react';
 import { useMemo } from 'react';
 
 export default function Sidebar() {
 	const navigate = useNavigate();
-	const location = useLocation();
 	const userStr = localStorage.getItem('user');
 	const user = userStr ? JSON.parse(userStr) : null;
 	const isAdmin = user?.role === 'admin';
-	const isCatalog = location?.pathname?.startsWith('/catalogo');
 
 	const handleLogout = () => {
 		try {
@@ -34,8 +32,12 @@ export default function Sidebar() {
 	const linkBase = 'group flex items-center px-3 py-3 rounded-md text-[#2f5112] hover:bg-[#4e7330] hover:text-white';
 	const iconBase = 'w-5 h-5 text-[#2f5112]/80 group-hover:text-white';
 
+	const partnerTopOffsetClass = 'top-24 h-[calc(100vh-96px)]';
+	const adminTopOffsetClass = 'top-16 h-[calc(100vh-64px)]';
+	const sidebarOffsetClass = isAdmin ? adminTopOffsetClass : partnerTopOffsetClass;
+
 	return (
-		<aside className="app-sidebar hidden md:flex flex-col fixed left-0 top-16 h-[calc(100vh-64px)] w-60 z-[120] border-r border-gray-700 bg-[#d7e29b]">
+		<aside className={`app-sidebar hidden md:flex flex-col fixed left-0 ${sidebarOffsetClass} w-60 z-[120] border-r border-gray-700 bg-[#d7e29b]`}>
 			{/* Mantém o menu fixo acompanhando o scroll sem encolher e fora do cabeçalho verde */}
 			<div className="flex items-start justify-start px-4 pt-2 bg-transparent text-white max-h-16">
 				{/* Logo removido per request */}

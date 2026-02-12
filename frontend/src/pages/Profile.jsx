@@ -135,11 +135,12 @@ export default function Profile() {
   }, []);
 
   useEffect(() => {
-    fetchProfile();
+    const hasFastCache = Boolean(sessionStorage.getItem('profile_cache') || localStorage.getItem('user'));
+    fetchProfile(!hasFastCache);
   }, []);
 
-  const fetchProfile = async () => {
-    setLoading((prev) => (user ? prev : true));
+  const fetchProfile = async (showBlockingLoader = true) => {
+    if (showBlockingLoader) setLoading(true);
     try {
       const response = await authAPI.getProfile();
       const profileData = response.data;
