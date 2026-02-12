@@ -42,6 +42,13 @@ CLOUDINARY_API_SECRET=sua_api_secret
    - Environment Variables (Production/Preview): mesma `VITE_API_URL`.
 3) Deploy. Teste no domínio `.vercel.app`.
 
+### Importante para evitar erro 404 em refresh (rotas SPA)
+- No projeto da Vercel do frontend, confirme:
+  - **Root Directory** = `frontend`
+  - `frontend/vercel.json` presente no commit deployado
+  - após deploy, usar **Redeploy** com **Clear build cache**
+- Com isso, URLs como `/catalogo`, `/pedidos`, `/perfil` devem abrir mesmo com F5/CTRL+SHIFT+R.
+
 ### Variáveis prontas para copiar (Vercel)
 
 ```env
