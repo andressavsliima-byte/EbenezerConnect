@@ -11,7 +11,26 @@
    - `JWT_SECRET`: chave forte (32+ chars).
    - `UPLOAD_DIR`: `/tmp/uploads` (opcional, já default).
    - `MAX_UPLOAD_SIZE`: `20000000` (opcional, 20 MB).
+   - (Recomendado) Cloudinary: configure `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` (ou `CLOUDINARY_URL`) para persistir imagens.
 7) Deploy e guarde a URL, ex: `https://seu-backend.onrender.com`.
+
+### Variáveis prontas para copiar (Render)
+
+```env
+NODE_ENV=production
+PORT=10000
+MONGODB_URI=mongodb+srv://USUARIO:SENHA@cluster.mongodb.net/ebenezer-connect?retryWrites=true&w=majority
+JWT_SECRET=COLOQUE_UMA_CHAVE_FORTE_COM_32_OU_MAIS_CARACTERES
+MAX_UPLOAD_SIZE=20000000
+UPLOAD_DIR=/tmp/uploads
+
+# Cloudinary (recomendado para persistir imagens)
+CLOUDINARY_CLOUD_NAME=seu_cloud_name
+CLOUDINARY_API_KEY=sua_api_key
+CLOUDINARY_API_SECRET=sua_api_secret
+# opcional em vez das 3 linhas acima:
+# CLOUDINARY_URL=cloudinary://API_KEY:API_SECRET@CLOUD_NAME
+```
 
 ## Frontend (Vercel)
 1) Em `frontend/.env.production` defina:
@@ -22,6 +41,12 @@
    - Framework: Vite
    - Environment Variables (Production/Preview): mesma `VITE_API_URL`.
 3) Deploy. Teste no domínio `.vercel.app`.
+
+### Variáveis prontas para copiar (Vercel)
+
+```env
+VITE_API_URL=https://seu-backend.onrender.com/api
+```
 
 ## Testes locais
 - Backend: `cd backend && npm install && npm start:workspace` (usa Mongo local de exemplo) ou configure `MONGODB_URI` e rode `npm start`.
@@ -37,4 +62,4 @@
 
 ## Logs e saúde
 - Endpoint de saúde: `GET /api/health`
-- Uploads servidos em `/uploads` (armazenados em `UPLOAD_DIR`, default `/tmp/uploads` em produção)
+- Uploads: usa Cloudinary quando configurado; sem Cloudinary faz fallback para `/uploads` (armazenados em `UPLOAD_DIR`, default `/tmp/uploads` em produção)

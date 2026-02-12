@@ -37,7 +37,7 @@ app.use(express.urlencoded({ extended: true }));
 // Pasta de uploads configurável (usa /tmp em ambientes serverless)
 const uploadsDir = process.env.UPLOAD_DIR
   ? path.resolve(process.env.UPLOAD_DIR)
-  : path.join(__dirname, '../uploads');
+  : (process.env.NODE_ENV === 'production' ? '/tmp/uploads' : path.join(__dirname, '../uploads'));
 fs.mkdirSync(uploadsDir, { recursive: true });
 app.use('/uploads', express.static(uploadsDir));
 

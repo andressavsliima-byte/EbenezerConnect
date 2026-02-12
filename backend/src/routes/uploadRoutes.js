@@ -1,5 +1,5 @@
 import express from 'express';
-import upload from '../middleware/upload.js';
+import upload, { getUploadedFileUrl } from '../middleware/upload.js';
 import { authenticate, adminOnly } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -15,8 +15,11 @@ router.post(
       return res.status(400).json({ message: 'Nenhuma imagem enviada' });
     }
 
+    const url = getUploadedFileUrl(req, req.file);
+
     res.json({
-      url: req.file.path,       // URL pública do Cloudinary
+      url,
+      imageUrl: url,
       public_id: req.file.filename,
     });
   }
@@ -32,8 +35,11 @@ router.post(
       return res.status(400).json({ message: 'Nenhuma imagem enviada' });
     }
 
+    const url = getUploadedFileUrl(req, req.file);
+
     res.json({
-      url: req.file.path,
+      url,
+      imageUrl: url,
       public_id: req.file.filename,
     });
   }

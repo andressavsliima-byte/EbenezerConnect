@@ -1,4 +1,5 @@
 import PromoBanner from '../models/PromoBanner.js';
+import { getUploadedFileUrl } from '../middleware/upload.js';
 
 export const listPublic = async (req, res) => {
   try {
@@ -55,9 +56,7 @@ export const uploadImageForPromo = async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo enviado' });
 
-    const protocol = req.protocol;
-    const host = req.get('host');
-    const imageUrl = `${protocol}://${host}/uploads/${req.file.filename}`;
+    const imageUrl = getUploadedFileUrl(req, req.file);
 
     const target = (req.body.target || req.query.target || 'desktop').toLowerCase();
     const update = {};
