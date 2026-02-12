@@ -5,8 +5,21 @@ import TopSearchBar from '../components/TopSearchBar';
 import MobileMenuDrawer from '../components/MobileMenuDrawer';
 
 export default function Orders() {
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [orders, setOrders] = useState(() => {
+    try {
+      const cached = sessionStorage.getItem('orders_cache');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [loading, setLoading] = useState(() => {
+    try {
+      return !sessionStorage.getItem('orders_cache');
+    } catch {
+      return true;
+    }
+  });
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [searchText, setSearchText] = useState('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -20,7 +33,11 @@ export default function Orders() {
     setLoading(true);
     try {
       const response = await ordersAPI.getMine();
-      setOrders(response.data || []);
+      const freshOrders = response.data || [];
+      setOrders(freshOrders);
+      try {
+        sessionStorage.setItem('orders_cache', JSON.stringify(freshOrders));
+      } catch {}
     } catch (error) {
       console.error('Erro ao buscar pedidos:', error?.response?.data || error.message);
       // Silenciar UI: não exibir toast para erros de busca
