@@ -35,7 +35,7 @@ export default function Sidebar() {
 	const iconBase = 'w-5 h-5 text-[#2f5112]/80 group-hover:text-white';
 
 	return (
-		<aside className="app-sidebar hidden md:flex flex-col fixed left-0 top-16 h-[calc(100vh-64px)] w-60 z-40 border-r border-gray-700 bg-[#d7e29b]">
+		<aside className="app-sidebar hidden md:flex flex-col fixed left-0 top-16 h-[calc(100vh-64px)] w-60 z-[120] border-r border-gray-700 bg-[#d7e29b]">
 			{/* Mantém o menu fixo acompanhando o scroll sem encolher e fora do cabeçalho verde */}
 			<div className="flex items-start justify-start px-4 pt-2 bg-transparent text-white max-h-16">
 				{/* Logo removido per request */}
@@ -108,4 +108,3 @@ function OrdersIconPlaceholder() {
 	// simple wrapper if a dedicated icon is needed later
 	return null;
 }
-
