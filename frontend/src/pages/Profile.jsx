@@ -7,7 +7,15 @@ import MobileMenuDrawer from '../components/MobileMenuDrawer';
 export default function Profile() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [orders, setOrders] = useState([]);
+  const [orders, setOrders] = useState(() => {
+    try {
+      const cached = sessionStorage.getItem('orders_cache');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [ordersLoading, setOrdersLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
   const [showAvatarMenu, setShowAvatarMenu] = useState(false);
@@ -86,6 +94,25 @@ export default function Profile() {
   const isAdmin = user?.role === 'admin';
   const isPartnerLocked = user && user.role !== 'admin';
 
+  // Prefill from sessionStorage for faster first paint
+  useEffect(() => {
+    try {
+      const cachedProfile = sessionStorage.getItem('profile_cache');
+      if (!cachedProfile) return;
+      const u = JSON.parse(cachedProfile);
+      setUser((prev) => prev || u);
+      setFormData((prev) => ({
+        ...prev,
+        name: u.name || prev.name || '',
+        email: u.email || prev.email || '',
+        company: u.company || prev.company || '',
+        phone: formatPhone(u.phone || prev.phone || ''),
+        avatarUrl: u.avatarUrl || prev.avatarUrl || '',
+      }));
+      setLoading(false);
+    } catch {}
+  }, []);
+
   // Prefill from localStorage to evitar tela vazia
   useEffect(() => {
     const cached = localStorage.getItem('user');
@@ -108,24 +135,26 @@ export default function Profile() {
   }, []);
 
   useEffect(() => {
-    fetchProfile();
+    const hasFastCache = Boolean(sessionStorage.getItem('profile_cache') || localStorage.getItem('user'));
+    fetchProfile(!hasFastCache);
   }, []);
 
-  const fetchProfile = async () => {
-    setLoading(true);
+  const fetchProfile = async (showBlockingLoader = true) => {
+    if (showBlockingLoader) setLoading(true);
     try {
       const response = await authAPI.getProfile();
-      setUser(response.data);
+      const profileData = response.data;
+      setUser(profileData);
       setFormData({
-        name: response.data.name,
-        email: response.data.email,
-        company: response.data.company || '',
-        phone: formatPhone(response.data.phone || ''),
-        avatarUrl: response.data.avatarUrl || ''
+        name: profileData.name,
+        email: profileData.email,
+        company: profileData.company || '',
+        phone: formatPhone(profileData.phone || ''),
+        avatarUrl: profileData.avatarUrl || ''
       });
-      // Carregar pedidos do usuário (tudo que comprou)
-      const ordersResp = await ordersAPI.getMine();
-      setOrders(ordersResp.data);
+      try {
+        sessionStorage.setItem('profile_cache', JSON.stringify(profileData));
+      } catch {}
     } catch (error) {
       console.error('Erro ao buscar perfil:', error);
       const is401 = error?.response?.status === 401;
@@ -133,11 +162,26 @@ export default function Profile() {
       if (is401 && fallback && !isSessionWarned) {
         setIsSessionWarned(true);
         setMessage({ type: 'error', text: 'Sessão expirada. Refaça o login para atualizar seus dados.' });
-      } else {
+      } else if (!user) {
         setMessage({ type: 'error', text: 'Erro ao carregar perfil.' });
       }
     } finally {
       setLoading(false);
+    }
+
+    // Carregar pedidos sem bloquear renderização do perfil
+    setOrdersLoading(true);
+    try {
+      const ordersResp = await ordersAPI.getMine();
+      const freshOrders = ordersResp.data || [];
+      setOrders(freshOrders);
+      try {
+        sessionStorage.setItem('orders_cache', JSON.stringify(freshOrders));
+      } catch {}
+    } catch (ordersError) {
+      console.error('Erro ao buscar pedidos do perfil:', ordersError);
+    } finally {
+      setOrdersLoading(false);
     }
   };
 
@@ -418,7 +462,9 @@ export default function Profile() {
             <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
               <ShoppingBag className="w-5 h-5" /> Minhas Compras
             </h3>
-            {orders.length === 0 ? (
+            {ordersLoading && orders.length === 0 ? (
+              <p className="text-gray-600 text-sm">Carregando pedidos...</p>
+            ) : orders.length === 0 ? (
               <p className="text-gray-600 text-sm">Nenhum pedido realizado ainda.</p>
             ) : (
               <div className="space-y-3">

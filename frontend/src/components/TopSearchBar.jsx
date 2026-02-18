@@ -25,16 +25,16 @@ export default function TopSearchBar({ value, onChange, onSubmit, withLogo = fal
     onSubmit?.();
   };
 
-  const wrapperClasses = `relative w-full bg-[#4e7330] text-white h-24 md:h-24 mb-2 md:mb-0 md:-ml-60 md:w-[calc(100%+15rem)] ${sticky ? 'sticky top-0 z-[70] shadow-md' : 'z-50'}`;
+  const wrapperClasses = `relative w-full bg-[#4e7330] text-white h-24 md:h-24 mb-2 md:mb-0 md:-ml-60 md:w-[calc(100%+15rem)] pointer-events-none ${sticky ? 'sticky top-0 z-[70] shadow-md' : 'z-50'}`;
 
   return (
     <div className={wrapperClasses}>
         <div className="px-0">
           <div className="flex items-center justify-center h-full">
-            <form onSubmit={handleSubmit} className="w-full h-full flex items-center">
+            <form onSubmit={handleSubmit} className="w-full h-full flex items-center pointer-events-none">
               <div className={`relative w-full max-w-none flex items-center ${withLogo ? 'gap-4' : ''}`}>
                 {withLogo && (
-                  <div className="-ml-4 pl-4 md:pl-6 z-50">
+                  <div className="-ml-4 pl-4 md:pl-6 z-50 pointer-events-auto">
                     <img
                       src="/images/logo.png"
                       alt="Recicla Ebenezer"
@@ -47,7 +47,7 @@ export default function TopSearchBar({ value, onChange, onSubmit, withLogo = fal
                 )}
 
                 {!hideSearch && (
-                  <div className="absolute left-1/2 md:left-[calc(50%+7.5rem)] top-0 -translate-x-1/2 translate-y-6 md:translate-y-6 w-full max-w-[1100px] px-4">
+                  <div className="absolute left-1/2 md:left-[calc(50%+7.5rem)] top-0 -translate-x-1/2 translate-y-6 md:translate-y-6 w-full max-w-[1100px] px-4 pointer-events-auto">
                     <div className="flex items-center justify-center gap-3 w-full">
                       <div className="relative w-full">
                         <input

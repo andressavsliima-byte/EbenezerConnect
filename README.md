@@ -94,11 +94,34 @@ A aplicação estará disponível em `http://localhost:3000`
   - `MONGODB_URI` (use MongoDB Atlas ou outro cluster acessível pela internet)
   - `JWT_SECRET`
   - `NODE_ENV=production`
-  - `UPLOAD_DIR=/tmp/uploads` (ephemeral; para persistir imagens use um bucket externo e adapte os uploads)
+  - `UPLOAD_DIR=/tmp/uploads` (fallback local para ambientes serverless)
   - `MAX_UPLOAD_SIZE` (opcional, em bytes)
+  - (Opcional, recomendado para persistência real) `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` **ou** `CLOUDINARY_URL`
   - `FORMULA_WORKBOOK_PATH` (opcional, caminho absoluto para a planilha se precisar sobrescrever a padrão)
 3. Deploy: basta clicar em *Deploy*; o build roda `npm run build` no `frontend` e publica o handler da API em `/api`.
-4. Observação sobre uploads: o filesystem da Vercel é temporário. Para persistência real, direcione os uploads para S3/Cloudflare R2 ou similar; `UPLOAD_DIR=/tmp/uploads` serve apenas para testes/artefatos temporários.
+4. Observação sobre uploads: o sistema agora usa Cloudinary quando as variáveis estiverem configuradas e faz fallback automático para `/tmp/uploads` quando Cloudinary não estiver disponível. Em Vercel, `/tmp` é temporário.
+
+### Exemplo rápido de variáveis (produção)
+
+Backend (Render/API):
+
+```env
+NODE_ENV=production
+MONGODB_URI=mongodb+srv://USUARIO:SENHA@cluster.mongodb.net/ebenezer-connect?retryWrites=true&w=majority
+JWT_SECRET=COLOQUE_UMA_CHAVE_FORTE_COM_32_OU_MAIS_CARACTERES
+MAX_UPLOAD_SIZE=20000000
+UPLOAD_DIR=/tmp/uploads
+
+CLOUDINARY_CLOUD_NAME=seu_cloud_name
+CLOUDINARY_API_KEY=sua_api_key
+CLOUDINARY_API_SECRET=sua_api_secret
+```
+
+Frontend (Vercel):
+
+```env
+VITE_API_URL=https://seu-backend.onrender.com/api
+```
 
 ## 📚 Estrutura do Projeto
 
